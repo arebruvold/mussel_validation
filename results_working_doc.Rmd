@@ -1,0 +1,959 @@
+---
+title: "Au validation"
+output:
+  bookdown::html_document2:
+    latex_engine: xelatex
+    theme: journal
+    code_folding: hide
+    number_sections: false
+editor_options:
+  markdown:
+    wrap: 150
+always_allow_html: yes
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  echo = TRUE,
+  warning = FALSE
+)
+
+library(targets)
+library(multcomp)
+library(tidyverse)
+library(kableExtra)
+library(broom)
+library(patchwork)
+library(see)
+library(metRology)
+
+# library(flextable)
+library(gt)
+source("~/Documents/GitHub/sp_development/r/sp_funs.R")
+```
+
+## Introduction
+
+## Data processing
+
+## Data cleaning
+
+```{r cleaning}
+au_alldays_cleaned <- tar_read(au_alldays) %>%
+  filter(
+    !str_detect(sample_name, "Au\\+")
+  ) %>%
+  mutate(
+    replicate = if_else(
+      str_detect(sample_name, "^\\dB") | str_detect(sample_name, "^\\sB") | str_detect(sample_name, "Ringtest B"),
+      2, 1
+    ),
+    sample_group = sample_name,
+    sample_group = case_when(
+      str_detect(sample_name, "matriseblank") ~ "Matrix blank",
+      str_detect(sample_name, "blåskjell") ~ "Blue mussel",
+      str_detect(sample_name, "metodeblank") ~ "Method blank",
+      str_detect(sample_name, "metodeblank") ~ "Method blank",
+      str_detect(sample_name, "Ringtest") ~ "Ringtest",
+      str_detect(sample_name, "RM") ~ "Instrument blank",
+      str_detect(sample_name, "vann") ~ "Instrument blank",
+      TRUE ~ sample_group
+    ),
+    spike = case_when(
+      str_detect(sample_name, "30\\s\\+\\s60") ~ "30 and 60 nm",
+      str_detect(sample_name, "30") ~ "30 nm",
+      str_detect(sample_name, "60|Ringtest") ~ "60 nm",
+      TRUE ~ ""
+    )
+  ) %>%
+  select(day, sample_group, spike, replicate, mean_size, mass_conc, particle_conc, n_particles, transport_efficiency, mass_thr, mass_signal, peaks) %>%
+  # add replicate # to water samples aka instrument blank samples using join.
+  group_by(day, sample_group, spike) %>%
+  mutate(
+    replicate = if_else(str_detect(sample_group, "Instrument blank"), cumsum(replicate), replicate)
+  ) %>%
+  # remove André's imported duplicates
+  distinct(day, sample_group, spike, replicate, .keep_all = TRUE) %>%
+  # remove additional water sample in last day
+  filter(!(replicate == 7 & sample_group == "Instrument blank")) %>%
+  ungroup()
+
+write_excel_csv(au_alldays_cleaned %>% select(-peaks), file = paste0(Sys.Date(), "_au_alldays_cleaned.csv"))
+
+```
+
+## Au overview
+
+```{r sample-tables}
+# day on x-axis, sample on y. One table for each parameter.
+# units is ng/kg mussel tissue, or particles per kg mussel tissue.
+validation_parameters <- list("particle_conc", "mass_conc", "mean_size")
+
+gt_tables_list <- validation_parameters %>%
+  map(
+    .f = ~ {
+      validation_parameter <- .x
+
+      gt_table <- au_alldays_cleaned %>%
+        # change to ng/kg mussel tissue from ng/L in measured aliquot
+        mutate(mass_conc = mass_conc/2,
+               particle_conc = particle_conc/2) %>% 
+        filter(sample_group %in% c("Blue mussel", "Method blank", "Instrument blank", "Matrix blank", "Deionized water")) %>%
+        filter(str_detect(spike, "nm")) %>% 
+        select(day, sample_group, spike, replicate, any_of(validation_parameter)) %>%
+        pivot_wider(names_from = day, values_from = validation_parameter) %>%
+        unite(
+          "Sample", sample_group, spike,
+          sep = " + "
+        ) %>%
+        arrange(desc(Sample)) %>%
+        mutate(Sample = str_remove_all(Sample, "[\\+\\s]{1,2}$")) %>%
+        # rename_with("Blue mussel", !matches("nm")) %>%
+        gt(
+          rowname_col = "replicate",
+          groupname_col = "Sample"
+        )
+
+      {
+        if (validation_parameter == "particle_conc") {
+          gt_table %>%
+            tab_header(title = "Particle number concentration") %>%
+            tab_spanner(
+              label = "Day",
+              columns = c(3, 4, 5, 6, 7)
+            ) %>%
+            tab_stubhead(label = "Sample/ Replicate") %>%
+            fmt_scientific(
+              columns = 3:7,
+              decimals = 2
+            )
+        } else if (validation_parameter == "mass_conc") {
+          gt_table %>%
+            tab_header(title = "Particle mass concentration") %>%
+            tab_spanner(
+              label = "Day",
+              columns = c(3, 4, 5, 6, 7)
+            ) %>%
+            tab_stubhead(label = "Sample/ Replicate") %>%
+            fmt_number(
+              columns = 3:7,
+              decimals = 2
+            )
+        } else if (validation_parameter == "mean_size") {
+          gt_table %>%
+            tab_header(title = "Mean particle diameter") %>%
+            tab_spanner(
+              label = "Day",
+              columns = c(3, 4, 5, 6, 7)
+            ) %>%
+            tab_stubhead(label = "Sample/ Replicate") %>%
+            fmt_number(
+              columns = 3:7,
+              decimals = 2
+            )
+        } else {
+          print("Error in gt_table formatting function.")
+        }
+      }
+    }
+  )
+
+gt_tables_list[[1]]
+
+gt_tables_list[[2]]
+
+gt_tables_list[[3]]
+
+```
+
+```{r}
+gt_tables_list[[1]] %>% gtsave(filename = "pnc_table.docx")
+
+gt_tables_list[[2]] %>% gtsave(filename = "mc_table.docx")
+
+gt_tables_list[[3]] %>% gtsave(filename = "ms_table.docx")
+```
+
+
+## Precision
+
+```{r ANOVA-precision}
+
+# fit lm for each spike level, parameter (pnc/mass/size) ~ day.
+# comment: Warning in code is due to sample without replicates.
+
+precision_anovas <-
+  au_alldays_cleaned %>%
+  mutate(
+    day = as.factor(day),
+    replicate = as.factor(replicate)
+  ) %>%
+  filter(sample_group == "Blue mussel") %>%
+  select(-n_particles, -transport_efficiency) %>%
+  pivot_longer(
+    cols = c(mean_size, mass_conc, particle_conc),
+    names_to = "parameter",
+    values_to = "value"
+  ) %>%
+  group_by(spike, parameter) %>%
+  nest() %>%
+  ungroup() %>%
+  mutate(
+    anovas = map(
+      data,
+      ~ .x %>%
+        lm(formula = value ~ day) %>%
+        anova() %>%
+        tidy() %>%
+        select(term, sumsq, meansq) %>%
+        pivot_wider(names_from = term, values_from = c(meansq, sumsq))
+    ),
+    grand_means = map(data, ~ .x %>%
+      ungroup() %>%
+      summarise(grand_mean = mean(value)))
+  ) %>%
+  unnest(anovas, grand_means) %>%
+  # Precision parameters
+  mutate(
+    RSE_repeatability = sqrt(meansq_Residuals) / grand_mean,
+    RSE_intermediate_precision = sqrt(
+      sqrt(meansq_Residuals)^2 +
+        sqrt(
+          (meansq_day - meansq_Residuals) / 2
+          # NOTE THAT THIS DOES NOT GENERALISE, ONLY VALID IF TWO REPLICATES
+        )^2
+    ) / grand_mean
+  )
+
+
+precision_gtable <- precision_anovas %>%
+  filter(str_detect(spike, "\\d")) %>%
+  select(spike, parameter, RSE_repeatability, RSE_intermediate_precision) %>%
+  rename(c(sample = spike)) %>%
+  mutate(parameter = case_when(
+    parameter == "mass_conc" ~ "Particle mass concentration",
+    parameter == "particle_conc" ~ "Particle number concentration",
+    parameter == "mean_size" ~ "Mean size"
+  )) %>%
+  mutate(sample = paste("Blue mussel +", sample)) %>%
+  gt(
+    rowname_col = "sample",
+    groupname_col = "parameter"
+  ) #%>%
+  # fmt_percent(columns = -c(1, 2)) %>%
+  # cols_label(
+  #   RSE_repeatability = html("RSD<sub>Repeatability</sub>"),
+  #   RSE_intermediate_precision = html("RSD<sub>Intermediate precision</sub>")
+  # )
+
+precision_gtable
+
+precision_gtable %>% gtsave(filename = "precision_table.docx")
+  
+```
+
+## Trueness
+
+### As recovery
+
+```{r trueness-vs-measured, include = FALSE}
+trueness_meas_gt <- au_alldays_cleaned %>%
+  filter(
+    sample_group %in%
+      c(
+        "Blue mussel",
+        "Matrix blank",
+        "Method blank",
+        "Instrument blank"
+      ),
+    spike %in% c("30 nm", "60 nm")
+  ) %>%
+  group_by(sample_group, spike) %>%
+  summarise(across(c("particle_conc", "mass_conc", "mean_size"), ~ mean(.))) %>%
+  group_by(spike) %>%
+  mutate(across(c("particle_conc", "mass_conc", "mean_size"), ~ .x / .x[sample_group == "Instrument blank"])) %>%
+  select(sample_group, spike, mean_size, mass_conc, particle_conc) %>%
+  gt() %>%
+  fmt_percent(
+    columns = !matches("sample_group"),
+    decimals = 0
+  ) %>%
+  cols_label(
+    mean_size = "Particle diameter",
+    mass_conc = "Particle mass concentration ",
+    particle_conc = "Particle number concentration"
+  )
+
+trueness_meas_gt %>%
+  gtsave(filename = "trueness_meas_rm_gt.docx")
+  
+```
+
+```{r trueness-vs-theoretical}
+# NPC: 4.58*10^7 or 3.66*10^8.
+# Str: 30 og 60.
+# Mass conc: 100 ng/L.
+
+trueness_theo_gt <- au_alldays_cleaned %>%
+  filter(
+    sample_group %in%
+      c(
+        "Blue mussel",
+        "BM spike after digest",
+        "Method blank",
+        "RM"
+      ),
+    spike %in% c("30 nm", "60 nm")
+  ) %>%
+  group_by(sample_group, spike) %>%
+  summarise(across(c("particle_conc", "mass_conc", "mean_size"), ~ mean(.))) %>%
+  group_by(spike) %>%
+  mutate(
+    particle_conc = if_else(spike == "30 nm", particle_conc / (3.66*10^8) , particle_conc / (4.58*10^7)),
+    mass_conc = mass_conc/100,
+    mean_size = if_else(spike == "30 nm", mean_size / 30 , mean_size / 60)
+  ) %>% 
+  select(sample_group, spike, mean_size, mass_conc, particle_conc) %>% 
+  gt() %>% 
+    fmt_percent(
+    columns = !matches("sample_group"),
+    decimals = 0
+  ) %>% 
+     cols_label(
+    mean_size = "Particle diameter",
+    mass_conc = "Particle mass concentration ",
+    particle_conc = "Particle number concentration"
+  )
+
+trueness_theo_gt
+
+trueness_theo_gt %>%  gtsave(filename = "trueness_theo_gt.docx")
+  
+```
+
+### From proficiency test
+
+```{r}
+au_alldays_cleaned %>% filter(sample_group == "Ringtest") %>%
+  summarise(across(c("particle_conc", "mean_size"), ~ mean(.))) %>%
+  mutate(
+    particle_conc_recovery = particle_conc/(1.44*10^8),
+    mean_size_recovery = mean_size/61
+    
+  ) %>% 
+  mutate(zscore_pnc = (particle_conc - (1.44*10^8)) / (0.65*10^8),
+         zscore_size = (mean_size - 61) / 6.1 ) %>% gt() %>% fmt_number(columns = -particle_conc,decimals = 2)
+
+```
+
+## Selectivity
+
+-   Is there interferences on the measurement of the analyte of interest?
+    -   Presence in blank.
+    -   Change in spiked signal.
+
+### Table
+
+```{r}
+
+au_alldays_cleaned %>%
+  mutate(
+    mass_conc = mass_conc / 2,
+    particle_conc = particle_conc / 2
+  ) %>%
+  filter(
+    str_detect(sample_group, "blank"),
+    str_detect(sample_group, "Method", negate = TRUE)
+  ) %>%
+  group_by(
+    sample_group, spike
+  ) %>%
+  summarise(
+    across(
+      .cols = c(mean_size, mass_conc, particle_conc),
+      list(
+        mean = ~ mean(.x, na.rm = TRUE),
+        sd = ~ sd(.x, na.rm = TRUE)
+      )
+    )
+  ) %>%
+  gt(rowname_col = "spike") %>%
+  fmt_number(
+    columns = 3:6,
+    decimals = 1
+  ) %>%
+  fmt_scientific(
+    7:8,
+    rows = everything(),
+    decimals = 2,
+    drop_trailing_zeros = FALSE,
+    scale_by = 1,
+    pattern = "{x}",
+    sep_mark = ",",
+    dec_mark = ".",
+    force_sign = FALSE,
+    locale = NULL
+  ) %>%
+  cols_merge_uncert(mean_size_mean, mean_size_sd, sep = " ± ", autohide = TRUE) %>% 
+  cols_merge_uncert(mass_conc_mean, mass_conc_sd, sep = " ± ", autohide = TRUE) %>% 
+  cols_merge_uncert(particle_conc_mean, particle_conc_sd, sep = " ± ", autohide = TRUE) %>% 
+   cols_label(
+    mean_size_mean = "Particle diameter",
+    mass_conc_mean = "Particle mass concentration",
+    particle_conc_mean = "Particle number concentration"
+  ) %>% 
+
+  gtsave(filename = "selectivity_table.docx")
+  
+```
+
+```{r}
+# plot particle size distribution of 30nm and 60 nm side by side, superimposing in instrument blank and in matrix blank.
+
+plot_selectivity <- au_alldays_cleaned %>% 
+  filter(
+    str_detect(sample_group, "blank"),
+    str_detect(sample_group, "Method", negate = TRUE),
+    spike != ""
+  ) %>% 
+  ungroup() %>%
+  unnest(peaks) %>% group_by(sample_group, spike) %>% 
+  mutate(particle_size_mean = mean(particle_size, na.rm = TRUE)) %>% 
+  ggplot(aes(particle_size,
+    fill = sample_group
+  )) + geom_vline(aes(xintercept = particle_size_mean), color = "red", linetype = "longdash")+
+  geom_histogram(position = "identity", binwidth = 0.5, alpha = 0.6) +
+  facet_wrap(~spike, scale = "free") +
+  xlim(c(0, 75))+
+  theme_linedraw(base_size = 15)+
+     theme(panel.grid.major = element_line(size = 0.05))+
+  theme(panel.grid.minor = element_line(size = 0.05))+
+  scale_fill_manual(values=c("#436EEE", "#8B3626"))+
+  xlab("Particle diameter [nm]")+
+  ylab("Frequency [#]")+
+  guides(fill=guide_legend(title="Sample"))
+
+
+plot_selectivity
+
+# showing artifact peak max distribution. These could be filtered by changing detection threshold.
+# au_alldays_cleaned %>%
+#   filter(
+#     str_detect(sample_group, "blank"),
+#     str_detect(sample_group, "Method", negate = TRUE),
+#     spike != ""
+#   ) %>%
+#   ungroup() %>%
+#   unnest(peaks) %>%
+#   filter(spike == "60 nm",
+#          particle_size < 25) %>% ggplot(aes(peak_max/peak_width))+geom_histogram(binwidth =0.5)+theme_bw()
+
+ggsave(plot_selectivity, filename = "plot_selectivity.tiff", width = 15, height = 5 )
+```
+
+### Statistics
+
+```{r}
+# Instrument blank vs matrix blank (interfering species present)
+# Sub-ng concentration, higher conc in mussel (avg 25 vs 15).
+# Statistical significance driven by outlier in matrix blank.
+
+list("mass_conc", "n_particles") %>%
+  map(
+    ~ {
+        t.test(
+          au_alldays_cleaned %>%
+            filter(
+              sample_group == "Instrument blank",
+              spike == ""
+            ) %>% pull(.x),
+          au_alldays_cleaned %>%
+            filter(
+              sample_group == "Matrix blank",
+              spike == "",
+              day != 1
+            ) %>% pull(.x)
+        )
+    }
+  )
+
+# Instrument blank spiked vs matrix blank spiked (matrix effects)
+
+# mass_conc, particle conc, mean size
+# 30 nm
+list("mass_conc", "particle_conc", "mean_size") %>%
+  map(
+    ~ {
+        wilcox.test(
+          au_alldays_cleaned %>%
+            filter(
+              sample_group == "Instrument blank",
+              spike == "30 nm"
+            ) %>% pull(.x),
+          au_alldays_cleaned %>%
+            filter(
+              sample_group == "Matrix blank",
+              spike == "30 nm"
+            ) %>% pull(.x)
+        )
+    }
+  )
+
+
+# 60 nm
+list("mass_conc", "particle_conc", "mean_size") %>%
+  map(
+    ~ {
+        t.test(
+          au_alldays_cleaned %>%
+            filter(
+              sample_group == "Instrument blank",
+              spike == "60 nm"
+            ) %>% pull(.x),
+          au_alldays_cleaned %>%
+            filter(
+              sample_group == "Matrix blank",
+              spike == "60 nm"
+            ) %>% pull(.x)
+        )
+    }
+  )
+
+# sensitivity via particle mass
+
+# 30 nm
+
+        t.test(
+          au_alldays_cleaned %>% unnest(peaks) %>% 
+            filter(
+              sample_group == "Instrument blank",
+              spike == "30 nm"
+            ) %>% pull(particle_mass),
+          au_alldays_cleaned %>% unnest(peaks) %>% 
+            filter(
+              sample_group == "Matrix blank",
+              spike == "30 nm"
+            ) %>% pull(particle_mass)
+        )
+1-3.910639e-19/4.829401e-19
+
+# 60 nm
+
+        t.test(
+          au_alldays_cleaned %>% unnest(peaks) %>% 
+            filter(
+              sample_group == "Instrument blank",
+              spike == "60 nm"
+            ) %>% pull(particle_mass),
+          au_alldays_cleaned %>% unnest(peaks) %>% 
+            filter(
+              sample_group == "Matrix blank",
+              spike == "60 nm"
+            ) %>% pull(particle_mass)
+        )
+1-1.788208e-18/2.274148e-18
+
+```
+
+We have a marginal significant difference between unspiked matrix blank and instrument blank in terms of particle mass or particle number concentrations. Yet, this in both cases sub-ng/L and mostly driven by single outlier. Hence, no interfering species appear to be present.
+
+We have a significant difference between matrix blank instrument blank in terms of particle mass concentration and mean particle size, but not
+particle number concentration. This indicates that we do not have a change in transport efficiency, yet in the signal per particle.
+
+### (Pragmatic for presentation)
+
+```{r}
+tar_read(au_alldays) %>% filter(str_detect(sample_name, "60 nm Au 100 ng/l RM|2B blåskjell 60 nm Au 100 ng/l")) %>% 
+rowwise() %>% unnest(peaks) %>% group_by(sample_name, day) %>% 
+  summarise(median_peak_area = median(peak_area, na.rm = TRUE),
+            mean_particle_size = mean(particle_size, na.rm = TRUE),
+            mean_particle_conc = mean(particle_conc, na.rm = TRUE),
+            mean_mass_conc = mean(mass_conc, na.rm = TRUE)) %>% 
+  group_by(sample_name) %>% 
+  summarise(
+    mean_peak_area = mean(median_peak_area, na.rm = TRUE),
+            mean_particle_size = mean(mean_particle_size, na.rm = TRUE),
+            mean_particle_conc = mean(mean_particle_conc, na.rm = TRUE),
+            mean_mass_conc = mean(mean_mass_conc, na.rm = TRUE)
+  )
+
+# Size matrix fx: `r 53.4/59.10` signal matrix fx`r 348.8/463.2` pnc sign `r 20567565/20366243` mc `r 35.67223/46.32001`
+```
+
+
+
+## Working range
+
+```{r}
+
+# Make calibration curves for each day-batch, appending day number.
+calibration <- list.files("~/sp-data/paper0_au_validering", full.names = TRUE) %>%
+  map_df(.f = ~ sp_classifier(.x, "60 nm Au 100 ng/l RM") %>%
+    sp_response() %>%
+    mutate(day = str_extract(.x, "\\d(?=.b$)"))) %>% distinct(response, .keep_all = TRUE) %>% select(day, intercept, response, r2)
+
+calibration %>% rename_with(~ .x %>%
+    str_to_title()
+    ) %>% gt() %>% 
+  fmt_number(columns = 2:3,
+             decimals = 2) %>% 
+  fmt_number(columns = 4,
+             decimals = 5) %>% 
+  gtsave(filename = "calibration_curves.docx")
+
+```
+
+### Particle number concentration
+
+Assuming the particles are homogeneously dispersed, the number of particles measured in a given interval will follow a Poisson distribution. The rate
+parameter, $\lambda$, corresponds to the mean number of particles in this interval. It follows from number theory that the interarrival times of such
+events will follow an exponential distribution with rate parameter $\lambda$.
+
+We have that $\lambda = c_p \cdot Q_d$, where $c_p$ is the particle number concentration of the measured solution in particles/L and $Q_d$ is the
+volumetric mass transport through the ICP in L/dwell.
+
+Using the cumulative exponential distribution we then have
+
+$F_X(x)=\left\{\begin{aligned} 0, & \text { if } x<0 \\ 1-\exp [-c_p Q_d x], & \text { if } x \geq 0\end{aligned}\right.$
+
+Thus, accepting e.g. 5% particle coincidence overlap, we have
+
+$\frac{ln(1/0.95)}{5Q_d} = c_p]$
+
+and we get inserting mean value from current experiment for 60 nm:
+
+$\frac{\ln \left(\frac{1}{0.95}\right)}{\left(12.62884 \times 3.407108 \times 10^{-11}\right)}$ = $1.2{\times 10^8}$
+
+For 30 nm:
+
+$\frac{\ln \left(\frac{1}{0.95}\right)}{\left(9.699962 \times 3.407108 \times 10^{-11}\right)}$ = $1.55{\times 10^8}$
+
+Taking dilution factor into account, we get for 60 nm `r 500*log(1/0.95)/(12.62884*3.407108*10^-11)` particles per kg mussel tissue and 30 nm
+`r 500*log(1/0.95)/(9.699962*3.407108*10^-11)` particles per kg mussel tissue.
+
+## Detection limit
+
+### Critical size
+
+A peak width of 500 $\mu$s is assumed based on measured peak widths and literature (Laborda 2020). Under the assumption of a triangular peak shape, we get an estimate for the coresponding particle mass, $m_p$:
+
+$$m_{p} = \frac{ A_p}{ S } = \frac{w_p \cdot h_p}{2S},$$
+Where $A_p$ is the particle signal, S is the sensitivity in k
+Using peak width 5 and height 6, we get $$5*6*1.698164e-21/2$$ gives 2.547246e-20 for the peak mass at LOD.
+
+using $$d = (\frac{6m}{\pi p})^{1/3}$$ we get
+
+```{r peak-width}
+peak_width <- 5
+
+#size/mass detection limit
+dl_sizemass <- au_alldays_cleaned %>%
+  filter(sample_group == "Matrix blank") %>%
+  filter(spike == "") %>%
+  unnest(peaks) %>%
+  group_by(day) %>%
+  summarise(h_thr = median(h_thr, na.rm = TRUE),
+            mass_thr = median(mass_thr, na.rm = TRUE)) %>%
+  mutate(
+    mass_detection_limit = peak_width * mass_thr/2,
+    size_detection_limit = ((6*mass_detection_limit)/(pi*19.32*1000))^(1/3)
+  )
+    
+```
+
+### PNC and mass conc
+
+```{r}
+
+#particle conc detection limit, using pooled blanks and mean number of particles detected. Converted to pnc by using the mean volume flow. Including dilution factor.
+  
+ dl_pnc <- au_alldays_cleaned %>%
+   filter(str_detect(sample_group, "blank")) %>%
+   filter(spike == "") %>% # group_by(day) %>%
+   summarise(
+     pnc_dl_pois = 500 * poisson.test(mean(n_particles) %>% round(digits = 0), conf.level = 0.997)$conf.int[2] * mean(particle_conc) / mean(n_particles),
+     pnc_dl_gaussian = 500 * (mean(n_particles) + 3 * sd(n_particles)) * mean(particle_conc) / mean(n_particles),
+     mass_conc_dl_gaussian = 500* (mean(mass_conc) + 3 * sd(mass_conc))
+   )
+ 
+ 
+```
+
+## Uncertainty
+
+### Background
+
+To determine the signal per element mass, $S$, a particulate reference material with a known mass or size can be analyzed. By integrating background-subtracted peaks and using the median or the kernel density estimate of the resulting signal distribution, we obtain an estimate of the signal per particle mass or size:
+
+$$S =  \frac{6 A_{rm}}{\rho  \cdot \pi \cdot d_{rm}^3},$$
+
+where $\rho$ is the element density, $d_{rm}$ the particle diameter and $A_{rm}$ is the estimated signal per particle in counts.
+
+Using ionic standards to establish a calibration curve, we use the slope coefficient, b, and the concentration of the corresponding ionic standard $C_{std}$ for an estimate for the signal per dwell per mass element per volume in (counts/dwell)/(kg/L): 
+
+$$I = \frac{b}{C_{std}}.$$
+
+Combining these, the flow rate through the plasma in $\frac{L}{t_{acq}}$ may be determined and used to relate measured quantities to concentrations in the samples analyzed.
+
+$$Q_{det} = \frac{t_{meas} \cdot I}{S}, $$
+
+where $t_{meas}$ is the number of dwells per acquisition, $S$ is the mass per signal in (kg/counts) and $I$ is the signal per mass element per volume in (counts/dwell)/(kg/L). 
+
+#### Particle diameter 
+
+Mean particle diameter is given by
+
+$$ \overline d_{p} =  \frac{1}{n}\sum_{i=1}^nd_{p_i} =
+\frac{1}{n}\sum_{i=1}^n\sqrt[3]{\frac{6  S \cdot A_{p_i}}{\pi \rho} } = 
+\frac{d_{rm}}{n\cdot \sqrt[3]{A_{rm}}}\sum_{i=1}^n\sqrt[3]{A_{p_i} }$$
+
+
+
+#### Particle mass concentration
+
+The particle mass concentration, $c_m$, is given by:
+
+$$c_m = \frac{\sum_{i=1}^nA_{p_i} \cdot S_{}}{Q_{det}} = \frac{ C_{std} \sum_{i=1}^nA_{p_i}}{t_{meas} \cdot b} $$
+
+
+#### Particle number concentration
+
+We have that the particle number concentration, $c_n$, is given by
+
+$$c_{n} = \frac{n_{meas}}{Q_{det}},$$
+where $n_{meas}$ is the number of particle events measured per acquisition, $Q_{det}$ ([L]) is the total flow rate at the detector per acquisition.
+
+Inserting for $Q_{det}$, we get 
+
+$$ c_{n}  = \frac{n_{meas} \cdot 6 A_{rm} \cdot C_{std}}{t_{meas} \cdot \rho  \cdot \pi \cdot d_{rm}^3 \cdot b} $$
+
+### Quantification
+
+For each component we evaluate the standard uncertainty:
+
+* $n_{meas}$ is the instrument measured number of particle events. This corresponds to a Poisson process and hence the standard uncertainty will be its square root. Using the LOD for particle number concentration corresponding to 35 particles and justifies a normal approximation as a conservative estimate for the uncertainty.
+
+* $A_{rm}$ is location of the particle area as determined using kernel density estimate, we set to 5%.
+
+* $C_{std}$ is the concentration of the standard, dependent on pippetting, storage as well as the standards reference uncertainty. We set this to 1 % to account for the uncertainty of the standard solution.
+
+* $t_{meas}$ is the measurement in dwells. We set 1%.
+
+* $\rho$ is the density. The uncertainty in density is not reported, yet [@montoro_bustos_evaluation_2022] 0.05%. We set 1%.
+
+* $r$ is the radius, uncertainty in CoA defined to be 4%.
+
+* $R_{std}$ is the slope coefficient of the calibration curve. We use the uncertainty in in the linear regression.
+
+* $d_{pip}$ is an additional multiplicative term added to account for the uncertainty in dilution and pippetting, set to 5%.
+
+```{r standard-uncert-pnc}
+c(1, 2, 3, 4, 5) %>%
+  map_dfr(
+    ~ tar_read(au_alldays) %>%
+      filter(str_detect(sample_name, "Au\\+|60.*RM"), day == .x) %>%
+      {
+        d_pip <- 1
+        d_pip_su <- 0.05
+        n_meas <- 209 # n particles
+        n_meas_su <- sqrt(n_meas)
+        t_meas <- 1200000 # n dwells
+        t_meas_su <- 1200000 * 0.01
+        d_rm <- 60 * 10^-9 # particle diameter reference material
+        d_rm_su <- d_rm * 0.04 # standard uncertainty particle diameter reference material
+        rho <- 1000 * 19.32 # density Au SI kg/m3
+        rho_su <- rho * 0.01 # uncertainty density
+        A_rm <- (.) %>%
+          filter(sample_name == "60 nm Au 100 ng/l RM") %>%
+          unnest(peaks) %>%
+          pull(peak_area) %>%
+          {
+            dens <- density((.), na.rm = TRUE)
+            dens$x[which.max(dens$y)]
+          } # KDE
+        A_rm_su <- A_rm * 0.05
+        A_p <- (.) %>%
+          filter(sample_name == "60 nm Au 100 ng/l RM") %>%
+          unnest(peaks) %>%
+          pull(peak_area) %>%
+          mean(na.rm = TRUE)
+        A_p_su <- A_p * 0.05/sqrt(n_meas)
+        A_psum <- (.) %>%
+          filter(sample_name == "60 nm Au 100 ng/l RM") %>%
+          unnest(peaks) %>%
+          pull(peak_area) %>%
+          sum(na.rm = TRUE)
+        A_psum_su <- A_psum * 0.05
+        pi <- pi
+        pi_su <- 0
+        R_std <- (.) %>% # response, counts per kg/L
+          filter(str_detect(sample_name, "Au\\+")) %>%
+          ungroup() %>%
+          mutate(
+            conc_ppb = str_extract(sample_name, str_extract(
+              sample_name,
+              paste0("[\\d.]+(?=[\\sa-zA-Z]*", isotope, ")")
+            )) %>% as.numeric()
+          ) %>%
+          mutate(
+            intercept =
+              coef(
+                lm(formula = as.numeric(mean_counts) ~ conc_ppb)
+              )[1],
+            response =
+              coef(
+                lm(formula = as.numeric(mean_counts) ~ conc_ppb)
+              )[2],
+            r2 = summary(
+              lm(formula = as.numeric(mean_counts) ~ conc_ppb)
+            )$r.squared
+          ) %>%
+          ungroup() %>%
+          pull(response) %>%
+          median(na.rm = TRUE)
+
+        R_std_su <- (.) %>% # response, counts per kg/L
+          filter(str_detect(sample_name, "Au\\+")) %>%
+          ungroup() %>%
+          mutate(
+            conc_ppb = str_extract(sample_name, str_extract(
+              sample_name,
+              paste0("[\\d.]+(?=[\\sa-zA-Z]*", isotope, ")")
+            )) %>% as.numeric()
+          ) %>%
+          lm(formula = as.numeric(mean_counts) ~ conc_ppb) %>%
+          summary()
+        R_std_su <- R_std_su$coefficients[, "Std. Error"][2] %>% as.numeric()
+
+        C_std <- 1 * 10^(-9) # 1 ug/L = 10^-9 kg/L
+        C_std_su <- C_std * 0.01
+        
+    # expression mean diameter
+        expr_md <- expression(d_rm * (A_p / A_rm)^(1 / 3))
+        # values for mean diameter variables
+        x_md <- list(d_rm = d_rm, A_p = A_p, A_rm = A_rm)
+        # uncertainties for mean diameter vars
+        u_md <- list(d_rm = d_rm_su, A_p = A_p_su, A_rm = A_rm_su)
+        # uncertainties for mean diameter
+        u.expr_md <- uncert(expr_md, x_md, u_md, method = "MC", B = 100000)
+        u.expr_md$u.y
+
+        # expression particle number concentration
+        expr_pnc <- expression(d_pip * n_meas * (A_p * C_std) / (t_meas * rho * (4 / 3) * pi * (d_rm / 2)^3 * R_std))
+
+        # values for each variable for particle number concentration
+        x_pnc <- list(d_pip = d_pip, t_meas = t_meas, n_meas = n_meas, A_p = A_p, C_std = C_std, rho = rho, pi = pi, d_rm = d_rm, R_std = R_std)
+        
+        # uncertainties for particle number concentration variables
+        u_pnc <- list(d_pip = d_pip_su, t_meas = t_meas_su, n_meas = n_meas_su, A_p = A_p_su, C_std = C_std_su, rho = rho_su, pi = pi_su, d_rm = d_rm_su, R_std = R_std_su)
+        # uncertaintites for particle number concentration
+        u.expr_pnc <- uncert(expr_pnc, x_pnc, u_pnc, method = "MC", B = 100000)
+        u.expr_pnc$u.y
+
+    
+        
+        # expression particle mass concentration
+        expr_pmc <- expression(d_pip*C_std*A_psum/(t_meas*R_std))
+        # values for pmc variables
+        x_pmc <- list(d_pip = d_pip, C_std = C_std, A_psum = A_psum, t_meas = t_meas, R_std = R_std)
+        # uncertainties for pmc vars
+        u_pmc <- list(d_pip = d_pip_su, C_std = C_std_su, A_psum = A_psum_su, t_meas = t_meas_su, R_std = R_std_su)
+        # uncertainties for pmc
+        u.expr_pmc <- uncert(expr_pmc, x_pmc, u_pmc, method = "MC", B = 100000)
+        u.expr_pmc$u.y
+
+        tibble(
+          uncertainty_md = (u.expr_md$u.y / (u.expr_md$y)),
+          uncertainty_pmc = (u.expr_pmc$u.y / (u.expr_pmc$y)),
+          uncertainty_pnc = u.expr_pnc$u.y / u.expr_pnc$y,
+          # md=u.expr_md$y,
+          # pmc=u.expr_pmc$y,
+          # pnc=u.expr_pnc$y,
+          day = .x
+        )
+      }
+  ) %>% gt()
+```
+
+
+```{r manual-prog-mc}
+
+# n_meas = 35
+# 
+# y <- (d_pip * n_meas * (A_p * C_std) / (t_meas * rho * (4 / 3) * pi * r^3 * R_std))
+# 
+# sim <- replicate(
+#   n = 1000000,
+#   expr = rnorm(n = 1, d_pip, d_pip_su) * rpois(n = 1, n_meas) * rnorm(n = 1, A_p, A_p_su) * rnorm(n = 1, C_std, C_std_su) / (
+#     rnorm(n = 1, t_meas, t_meas_su) * rnorm(n = 1, rho, rho_su) * (4 / 3) * pi * rnorm(n = 1, r, r_su)^3 * rnorm(n = 1, R_std, R_std_su)
+#   )
+# )/y
+# 
+# sd(sim)
+# quantile(sim,c(0.05, 0.95))
+# 
+# ggplot() +
+#   geom_histogram(aes(sim), bins = 100, color = "black", fill = "red") +
+#   theme_linedraw(base_size = 15) +
+#   theme(panel.grid.major = element_line(size = 0.05)) +
+#   theme(panel.grid.minor = element_line(size = 0.05))
+
+```
+
+
+
+## Stability
+
+Spiked method blank vs mussel spiked before and after.
+
+ANOVA between three groups + posthoc.
+
+```{r}
+au30_stab <- au_alldays_cleaned %>% filter(
+  str_detect(spike, "^\\d{2}\\snm"),
+  sample_group %in% c("Method blank",
+                      "Matrix blank",
+                      "Blue mussel",
+                      "Instrument blank"),
+  spike == "30 nm"
+) %>% 
+  mutate(sample_group = sample_group %>% as.factor()) %>% ungroup %>% select(sample_group, mass_conc, particle_conc)
+
+amod_mass_conc <- aov(mass_conc ~ sample_group, data = au30_stab)
+
+amod_particle_conc <- aov(particle_conc ~ sample_group, data = au30_stab)
+
+glht(amod_mass_conc, linfct = mcp(sample_group = "Tukey")) %>% summary()
+
+glht(amod_particle_conc, linfct = mcp(sample_group = "Tukey")) %>% summary()
+
+```
+
+## Poster
+
+Comment: Outlier detected strand sample G in poster 1 for Ti. This is due to one very large particle, above 1 um!
+
+```{r poster-exploration}
+
+# tar_read(poster1) %>% filter(isotope == "Cr") %>% select(sample_name, n_particles, median_size, mass_conc) %>% kable(caption = "Poster 1 batch from raw, isotope = Cr", digits = 2) %>% kable_styling()
+# 
+# tar_read(poster1) %>% filter(isotope == "Cu") %>% select(sample_name, n_particles, median_size, mass_conc) %>% kable(caption = "Poster 1 batch from raw, isotope = Cu", digits = 2) %>% kable_styling()
+# 
+# tar_read(poster1) %>% filter(isotope == "Ti") %>% select(sample_name, n_particles, median_size, mass_conc) %>% kable(caption = "Poster 1 batch from raw, isotope = Ti", digits = 2) %>% kable_styling()
+
+```
+
+## References
+
+-   "The same observation has been made by other authors as well, indicating that more research on determination of small particles near LODsize is
+    urgently needed." - Kinnunen.
+
+## Questions
+
+
+
+
+

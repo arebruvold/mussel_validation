@@ -1,0 +1,464 @@
+---
+title: "Au validation"
+output:
+  bookdown::html_document2:
+    latex_engine: xelatex
+    theme: journal
+    code_folding: hide
+    number_sections: false
+editor_options:
+  markdown:
+    wrap: 150
+always_allow_html: yes
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  echo = TRUE,
+  warning = FALSE
+)
+library(targets)
+library(tidyverse)
+library(kableExtra)
+library(broom)
+library(patchwork)
+library(see)
+# library(flextable)
+library(gt)
+source("~/Documents/GitHub/sp_development/r/sp_funs.R")
+```
+
+# Detection limit
+
+We wish to establish a well-defined detection limit in terms of $\alpha$ and $\beta$, where $\alpha$ is the false positive rate, and $\beta$ is the
+false negative rate, or the probability of non-detection. $\alpha$ directly follows from the background noise assuming it follows a Poisson
+distribution
+
+## Comparison
+
+Given two different samples with different background, the same $\alpha$ will result in different intensity thresholds, *h_thr*, calculated from the
+noise. Thus, the probability to detect, \*(1-$\beta$)\*, a particle of the same mass will be different for the two samples and a comparison will be
+problematic. This especially holds true on a particle number basis, as the number of particles may increase exponentially with smaller sizes. [REF]
+
+Instead applying the same intensity threshold, giving a different $\alpha$, $\beta$ is kept constant. Across samples with different sensitivities due
+to e.g. being from different batches, the threshold can be normalized to a mass based threshold. If we utilize the highest mass based threshold, we
+set $\alpha \leq$ k, and $\beta$ = 0.5. Assuming a certain peak shape, we may also estimate the detection limit in terms of mass, and by making
+assumptions regarding element density, additionally a detection limit in terms of size follows.
+
+### Coding
+
+-   Need to retrieve h_thr in the peaks file to be able to calculate mass based thr for each sample, thus change to sp_peak_discriminator to include
+    h_thr, add this to each sample as mass_thr. OK
+
+-   Set to highest of this value across all samples per isotope.
+
+-   Then filter particles below this mass_thr (or whichever is greater of current and new candidate) and recalculate concentration parameters using
+    total conc and mean counts OR add mass signal to output alongside total conc -\> simplifies. Check if possible to remov
+
+Check if this is properly done in sp_funs_equal_h\_thr - compare it to sp_funs using diff?
+
+Use two small batches to test.
+
+```{r}
+source("~/Documents/GitHub/sp_development/r/sp_funs_equal_h_thr.R")
+
+bmtest1 <- "~/sp-data/test/22_1205_quantification_d2.b/" %>%
+      sp_wrapper(
+        acq_time = 45,
+        sample_intake_rate = 0.3592781,
+        RM_string = "Au RM 60 nm 1250ng/L",
+        RM_dia = 63,
+        RM_isotope = "Au",
+        RM_density = 19.32,
+        element_fraction = 1,
+        dens_comps = dens_comps
+      )
+
+bmtest2 <- "~/sp-data/test/22_1205_quantification_d3.b/" %>%
+      sp_wrapper(
+        acq_time = 45,
+        sample_intake_rate = 0.3592781,
+        RM_string = "Au RM 60 nm 1250ng/L",
+        RM_dia = 63,
+        RM_isotope = "Au",
+        RM_density = 19.32,
+        element_fraction = 1,
+        dens_comps = dens_comps
+      )
+
+bmtests <- rbind(bmtest1, bmtest2) %>% filter(str_detect(sample_name, "x1000"))
+
+#problem, h_thr calculated only from particles!
+# use mean counts? not ideal
+
+# strategy:use list output to print both dataframe and mean counts
+
+classified <- sp_classifier("~/sp-data/test/22_1205_quantification_d2.b", RM_string = "Au RM 60 nm 1250ng/L" ) %>% head(n = 93)
+
+Sys.time()
+sp_peaks_test <- sp_peaker2(classified)
+Sys.time()
+
+Sys.time()
+sp_peaks_test_oldw_nest <- sp_peaker(classified %>% head(n=10))
+Sys.time()
+
+
+
+Sys.time()
+test_wrapper <- sp_wrapper("~/sp-data/dev-sp/", RM_string = "AuRM500ng/LM")
+Sys.time()
+# Debug "An error occurred in sp_outputer at 2023-01-19 14:09:48 : \033[1m\033[33mError\033[39m in `mutate()`:\033[22m\n\033[38;5;255m\033[33m!\033[38;5;255m Problem while computing `peaks = future_map2(...)`.\033[39m\n\033[1mCaused by error in `get()`:\033[22m\n\033[33m!\033[39m Identified global objects via static code inspection (structure(function (..., .x = ..1, .y = ..2, . = ..1); .x %>% mutate(particle_mass = peak_area * (filter(calibration_data,; isotope == .y) %>% pull(mass_signal) %>% as.numeric()), particle_size = (6 *; particle_mass/(pi * (filter(dens_comps, isotope == .y) %>%; pull(density, element_fraction) %>% Reduce(`*`, .) %>% as.numeric()) *; 1000))^(1/3) * 10^9), class = c(\"rlang_lambda_function\",; \"function\"))). promise already under evaluation: recursive default argument reference or earlier problems?\n"
+
+classified <- sp_classifier("~/sp-data/test/22_1205_quantification_d2.b", RM_string = "Au RM 60 nm 1250ng/L" ) %>% head(n = 93)
+
+RM_dia = 60
+RM_density = 19.32
+RM_isotope = "Au"
+element_fraction = 1
+
+peaked <- sp_peaker(classified)
+
+calibrated <-
+  sp_calibrator(
+    classified,
+    RM_dia,
+    RM_density,
+    RM_isotope,
+    element_fraction
+  )
+
+  sp_output <- sp_outputer(
+    peaked,
+    calibrated,
+    60,
+    dens_comps,
+    RM_isotope,
+    0.346
+  )
+  
+  test_wrapper <- sp_wrapper(csv_folder = "~/sp-data/test/22_1205_quantification_d2.b", RM_string = "Au RM 60 nm 1250ng/L",
+                       acq_time = 60,
+                       sample_intake_rate = 0.346,
+                       RM_dia = 60,
+                       RM_isotope = "Au",
+                       RM_density = 19.32,
+                       element_fraction = 1,
+                       dens_comps = dens_comps)
+  test_wrapper <- test_wrapper %>% filter(type == "SAMPLE")
+  
+  
+```
+
+```{r}
+
+sp_comparer <- function(processed, acq_time) {
+  # use mass signal and mean h thr to remove particles bellow highest mass thr.
+  processed %>%
+    filter(type == "SAMPLE") %>%
+    group_by(isotope) %>%
+    mutate(max_mass_thr = max(mass_thr)) %>%
+    ungroup() %>%
+    mutate(
+      peaks = future_map2(
+        peaks, max_mass_thr * mass_signal,
+        ~ .x %>% filter(peak_max > .y)
+      )
+    ) %>% 
+    mutate(
+      # recalculate peak summary values
+      summary_data = future_map(
+        peaks,
+        ~ .x %>%  
+          summarise(
+            n_particles = n(),
+            mean_size = mean(particle_size, na.rm = TRUE),
+            median_size = median(particle_size, na.rm = TRUE),
+            mass_conc = sum(particle_mass, na.rm = TRUE)
+          )
+      )
+    ) %>% select(-c(n_particles, mean_size, median_size, mass_conc, particle_conc)) %>%
+    unnest(summary_data) %>%
+    mutate(mass_conc = mass_conc * 10^12 / detector_flow_rate * acq_time * 10000,
+           particle_conc = n_particles / detector_flow_rate * acq_time * 10000 )
+}
+
+
+sp_compared_newtest <- sp_comparer(test_wrapper, acq_time = 45)
+```
+
+## Threshold in terms of particle mass
+
+We have the basic assumption that the peak area, $S_{p}$, is proportional to the particle mass, $m_p$ and is a cubic function of the particle diameter
+for spherical particles:
+
+$S_{p} \propto m_p = k \cdot d^{3}$.
+
+Using a property to describe the peak shape relating area to e.g. peak width $w_p$ and height $h_p$ assuming triangular peak shapes:
+
+$S_p = \frac{w_p \cdot h_p}{2}$
+
+The peak height or max intensity threshold directly follows from setting alpha or false positive rate. We need then only relate the peak width $S_p$
+to the peak max, or similarly, height threshold.
+
+-   Is shape, e.g. peak_width/peak_max, similar for different particle sizes or max intensities?
+
+```{r shape-check}
+au_sizes_inspect <- tar_read(au_sizes2)
+#using conc from mass_conc_estimator, see also "Prelim lab 3 28.10.22" notes
+
+
+p1 <- au_sizes_inspect %>%
+  filter(sample_name %>% str_detect("^Au RM.+\\d$")) %>%
+   filter(sample_name %>% str_detect("10.9", negate = TRUE)) %>% 
+  unnest(peaks) %>%
+  group_by(sample_name) %>%
+  summarise(
+    median_pm_pw = median(peak_max / peak_width),
+    median_pw = median(peak_width),
+    median_pm = median(peak_max),
+    median_pmass = median(particle_mass)
+  ) %>%
+  mutate(cert_size = str_extract(sample_name, "[\\d\\.]+") %>% as.numeric()) %>%
+  ggplot(aes(cert_size, median_pm_pw, color = cert_size)) +
+  geom_point()+
+    geom_smooth(method="lm", formula= (y ~ x), se=FALSE, color=1)+
+  labs(y = "Median peak max / median peak width",
+       x = "Certified particle size.")
+
+p2 <- au_sizes_inspect %>%
+  filter(sample_name %>% str_detect("^Au RM.+\\d$")) %>% 
+   # filter(sample_name %>% str_detect("10.9", negate = TRUE)) %>% 
+  filter(sample_name %>% str_detect("100", negate = TRUE)) %>%
+  unnest(peaks) %>%
+  group_by(sample_name) %>%
+  summarise(
+    median_pm_pw = median(peak_max / peak_width, na.rm = TRUE),
+    median_pw = median(peak_width, na.rm = TRUE),
+    median_pm = median(peak_max, na.rm = TRUE),
+    median_pmass = median(particle_mass, na.rm = TRUE)
+  ) %>% 
+  mutate(cert_size = str_extract(sample_name, "[\\d\\.]+") %>% as.numeric()) %>%
+  ggplot(aes(median_pm, median_pm_pw, color = cert_size %>% as.factor())) +
+  geom_point()+
+    geom_smooth(method="lm", formula= (y ~ x), se=FALSE, color=1)+
+  labs(y = "Median (peak max / peak width)",
+       x = "Median peak max")
+
+
+p3 <- au_sizes_inspect %>%
+  filter(sample_name %>% str_detect("^Au RM.+\\d$")) %>%
+  filter(sample_name %>% str_detect("10.9", negate = TRUE)) %>% 
+  unnest(peaks) %>%
+  mutate(cert_size = str_extract(sample_name, "[\\d\\.]+") %>% as.numeric()) %>%
+  ggplot(aes(peak_max, peak_max / peak_width)) +
+  geom_point(aes(color = cert_size %>% as.factor()), alpha = 0.1) +
+  geom_quantile(quantiles = 0.5)+
+  geom_quantile(quantiles = 0.5, method = "rqss")+
+  geom_smooth(method = "lm", se = TRUE)+
+  
+  xlim(0,1000)+ylim(0, 60)
+
+p2/p3
+
+# peak width vs height
+au_sizes_inspect %>%
+  filter(sample_name %>% str_detect("^Au RM.+\\d$")) %>%
+ #  filter(sample_name %>% str_detect("10.9", negate = TRUE)) %>% 
+  unnest(peaks) %>%
+  group_by(sample_name) %>%
+  summarise(
+  median_pm_pw = median(peak_max / peak_width, na.rm = TRUE),
+  median_pw = median(peak_width, na.rm = TRUE),
+  median_pm = median(peak_max, na.rm = TRUE),
+  median_pmass = median(particle_mass, na.rm = TRUE)
+  ) %>%
+  mutate(cert_size = str_extract(sample_name, "[\\d\\.]+") %>% as.numeric()) %>%
+  ggplot(aes(cert_size, peak_max)) +
+  geom_point()+
+    geom_smooth(method="lm", formula= (y ~ x), se=FALSE, color=1)
+```
+
+We appear to have as linear relation between the aspect ratio (peak_max/peak_width) and peak_max.
+
+```{r au-size-calibration}
+
+au_sizes_cleaned <- tar_read(au_sizes2) %>%
+  filter(str_detect(sample_name, "^Au RM.+\\d$")) %>%
+  mutate(
+    peaks = map(peaks, ~ .x %>% filter(peak_width > 3)),
+    median_peak_width = map(peaks, ~ .x %>% summarise(median_peak_width = median(peak_width))),
+    median_particle_size = map(peaks, ~ .x %>% summarise(median_particle_size = median(particle_size))),
+    mean_peak_width = map(peaks, ~ .x %>% summarise(mean_peak_width = mean(peak_width, trim = 0.1))),
+    mean_particle_size = map(peaks, ~ .x %>% summarise(mean_particle_size = mean(particle_size, trim = 0.1))),
+    particle_size_cert = str_extract(sample_name, "Au RM [\\d\\.]{2,4}"),
+    particle_size_cert = str_extract(particle_size_cert, "[\\d\\.]{2,4}") %>% as.numeric()
+  ) %>%
+  unnest(median_peak_width, median_particle_size, mean_peak_width, mean_particle_size)
+
+  
+au_sizes_cleaned %>%
+  ggplot(aes(particle_size_cert, mean_peak_width)) +
+  geom_point(aes(color = sample_name), size = 5) +
+  # xlim(c(0,15))+
+  geom_smooth(method = "lm", se = TRUE, formula = y ~ x
+            )+
+  geom_point(data= au_sizes_cleaned %>% unnest(peaks), aes(particle_size, peak_width, color = sample_name), alpha = 0.2, size = 0.5)
+
+au_sizes_cleaned %>% unnest(peaks) %>% 
+   ggplot(aes(particle_size_cert, particle_size)) +
+  geom_jitter(aes(color = sample_name), size = 1, alpha = 0.1) +geom_smooth(method = "lm", se = TRUE)
+
+
+```
+
+Thus, certified size are not consistent with measured size on ICP for 10 nm particles. Concentrations are also very low with 10 nm particles, and we
+know 100 nm particles to be underestimated. Most particles being below LOD could cause an overestimation of sizes.
+
+```{r}
+
+poster1 <- tar_read(poster1)
+
+tar_read(poster1) %>% filter(sample_name == "SPIKE TiO2, CuO", isotope == "Ti") %>%
+select(1:7) %>% unnest(peaks) %>% ggplot(aes(particle_size, peak_width)) + geom_point(aes(color = sample_name), alpha = 0.2)+geom_smooth(method = "lm", formula=y~x)
+
+tar_read(poster1) %>% filter(sample_name == "SPIKE TiO2, CuO", isotope == "Ti") %>%
+select(1:7) %>% unnest(peaks) %>% ggplot(aes(particle_size, peak_width)) + geom_point(aes(color = sample_name), alpha = 0.2)+geom_smooth(method = "lm", formula=y~x)
+
+```
+
+### Peak width versus size dependency
+
+[@shaw_nano-particle_2016] found small difference in peak width between 10nm and 40 nm Au, mostly in the spread of distribution.
+[@tuoriniemi_improving_2014] no big difference between peak widths with different elements, describe tailing effect.
+
+We investigatethe hypothesis if peak width can be predicted from particle size with particles within the linear range using Pt and Si particles
+**using the sizes in the COA**. Order more Au particles: 20, 40, 50 nm?
+
+#### Au particles
+
+Using CoA sizes:
+
+```{r}
+map_df(.x = c(10.9, 20.3, 30, 39, 51, 63, 83, 100), .f = ~ mass_conc_estimator(200, 63, .x)) %>% kable()
+```
+
+```{r}
+sp_classifier("~/sp-data/22_1028_Au_NP_calibration_series_10_20_30_40_50_60_80_100nm.b/")
+
+au_sizes <- sp_wrapper(csv_folder = "~/sp-data/22_1028_Au_NP_calibration_series_10_20_30_40_50_60_80_100nm.b/", acq_time = 60, sample_intake_rate = 0.311, RM_string = "Au RM 63 nm 200ng/L",RM_dia = 63, RM_isotope = "Au", RM_density = 19.32, element_fraction = 1, dens_comps = dens_comps)
+```
+
+#### Pt particles
+
+```{r}
+
+dens_comps <- tibble(
+  "isotope" = c("RM", "Au", "Al", "Mn", "Pb", "Fe", "Si", "Ti", "Cr", "Ce", "Zr", "Cu", "Cd", "Ba", "Co", "Ni", "Zn", "Pt"),
+  "density" = c(19.32, 19.32, 2.56, 4.25, 6.29, 4.30, 2.2, 4.17, 5.22, 7.22, 5.68, 6.31, 2, 2, 2, 2, 2, 6),
+  "element_fraction" = c(1, 1, 26.982/(39.098+26.982+3*28.085+8*15.999), 1 / 1.6, 1 / 1.465, 1 / 1.59, 1 / 2.139, 1/1.67, 1/1.462, 1/1.23, 91.22/(91.22+16.00*2), 63.55/(63.55+16), 1, 1, 1, 1, 1, 1)
+)
+
+
+pt_sizes <- sp_wrapper(csv_folder = "~/sp-data/20210604_Pt_30_50_70nm.b/", acq_time = 120, sample_intake_rate = 0.346, RM_string = "60 nm Au NP 100 ng/L",RM_dia = 63, RM_isotope = "Au", RM_density = 19.32, element_fraction = 1, dens_comps = dens_comps)
+
+
+
+pt_sizes_cleaned <- tar_read(pt_sizes) %>%
+  filter(sample_name %in% c(
+    "70 nm Pt NP 100 ng/L",
+    "50 nm PtNP 100 ng/L",
+    "30 nm Pt NP 10 ng/L"
+  )) %>%
+  mutate(
+    sample_name = str_replace_all(sample_name, "30 nm", "31 nm"),
+    sample_name = str_replace_all(sample_name, "50 nm", "46 nm"),
+    # peaks = map(peaks, ~ .x %>% filter(peak_width > 3)),
+    median_peak_width = map(peaks, ~ .x %>% summarise(median_peak_width = median(peak_width))),
+    median_particle_size = map(peaks, ~ .x %>% summarise(median_particle_size = median(particle_size))),
+    mean_peak_width = map(peaks, ~ .x %>% summarise(mean_peak_width = mean(peak_width, trim = 0.1))),
+    mean_particle_size = map(peaks, ~ .x %>% summarise(mean_particle_size = mean(particle_size, trim = 0.1))),
+    particle_size_cert = str_extract(sample_name, "\\d{2,3}\\snm"),
+    particle_size_cert = str_extract(particle_size_cert, "\\d{2,3}") %>% as.numeric()
+  ) %>%
+  unnest(median_peak_width, median_particle_size, mean_peak_width, mean_particle_size)
+
+  
+pt_sizes_cleaned %>%
+  ggplot(aes(particle_size_cert, mean_peak_width)) +
+  geom_point(aes(color = sample_name), size = 5) +
+  # xlim(c(0,15))+
+  geom_smooth(method = "lm", se = TRUE, formula = y ~ x
+            )+
+  geom_point(data= pt_sizes_cleaned %>% unnest(peaks), aes(particle_size, peak_width, color = sample_name), alpha = 0.2, size = 0.5)+
+  geom_smooth(data = pt_sizes_cleaned %>% unnest(peaks), aes(particle_size, peak_width), method = "lm", se = TRUE, formula = y ~ x
+            )
+
+rbind(pt_sizes_cleaned, au_sizes_cleaned) %>%
+  
+  unnest(peaks) %>% ggplot(aes(particle_size_cert, mean_peak_width, color = sample_name, shape = isotope))+geom_point()
+
+```
+
+Appear to have a linear relationship between both the measured particle size and certified particle size versus peak width as long we are in the
+linear range. Thus, we can use this to estimate a LOD-size/mass on a particle to particle basis. Though, for publication we need Au NPs with sizes in
+the linear range -\> order.
+
+#### Si particles
+
+```{r}
+
+si_sizes_cleaned <- tar_read(si_sizes) %>%
+  filter(str_detect(sample_name, "SiO2")) %>%
+  mutate(
+    sample_name = str_replace_all(sample_name, "300 nm", "310 nm"),
+    sample_name = str_replace_all(sample_name, "120 nm", "118 nm"),
+    sample_name = str_replace_all(sample_name, "1000 nm", "1013 nm"),
+    # peaks = map(peaks, ~ .x %>% filter(peak_width > 3)),
+    median_peak_width = map(peaks, ~ .x %>% summarise(median_peak_width = median(peak_width))),
+    median_particle_size = map(peaks, ~ .x %>% summarise(median_particle_size = median(particle_size))),
+    mean_peak_width = map(peaks, ~ .x %>% summarise(mean_peak_width = mean(peak_width, trim = 0.1))),
+    mean_particle_size = map(peaks, ~ .x %>% summarise(mean_particle_size = mean(particle_size, trim = 0.1))),
+    particle_size_cert = str_extract(sample_name, "\\d{2,4}\\snm"),
+    particle_size_cert = str_extract(particle_size_cert, "\\d{2,4}") %>% as.numeric()
+  ) %>%
+  unnest(median_peak_width, median_particle_size, mean_peak_width, mean_particle_size)
+  
+si_sizes_cleaned %>%
+  ggplot(aes(particle_size_cert, mean_peak_width)) +
+  # xlim(c(0,15))+
+  geom_smooth(method = "lm", se = TRUE, formula = y ~ x
+            )+
+  geom_point(data= si_sizes_cleaned %>% unnest(peaks), aes(particle_size, peak_width, color = sample_name), alpha = 0.05, size = 0.5)+
+  geom_point(aes(color = sample_name), size = 5)
+
+```
+
+80 and 120 nm particles are influenced by being near the LOD and thus underrepresented. Also, we appear to have high levels of Si contamination - more
+in the water blanks than in 10 ppb Si+. The artifact is very pronounced for bigger Si particles. The sizes are also generally underrepresented versus
+the TEM data. This may be due to e.g. density mismatch, or due to non-linearity.
+
+# Pragmatic approach
+
+## Xc mass/size
+
+Assume peak width approx 500 us. Substantiated by measured particles and literature.
+
+We then use the relationship $mass_{particle} = S_p \cdot K = \frac{w_p \cdot h_p}{2} \cdot K$
+
+Using peak width 5 and height 6, we get `r 5*6*1.698164e-21/2` = 2.547246e-20 for the peak mass at LOD.
+
+using $d = (\frac{6m}{\pi p})^{1/3}$ we get `r ((6*2.547246e-20)/(pi*19.32*1000))^(1/3)` = 14 nm.
+
+Alternatively, spike with particles with decreasing sizes. When 50% recovery, at the LOD.
+
+## For PNC
+Detected mean particles in blue mussel blank = 39.
+`r poisson.test(39, conf.level = 0.997)` = 21 to 61.
+
+61 corresponds to approx a pnc of 1404769 (using only mean)
+
+
