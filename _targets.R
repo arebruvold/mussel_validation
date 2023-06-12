@@ -112,32 +112,32 @@ list(
       .id = "day"
     )
   ),
-  # tar_target(
-  #   poster1,
-  #   sp_wrapper("~/OneDrive - Havforskningsinstituttet/Are Marine Nanoparticles/Paper_2_Au_val/poster_data/200814_BM_TiCuCr_x6000_poster_1.b/",
-  #              acq_time = 180,
-  #              sample_intake_rate = 0.346,
-  #              RM_string = "Au RM",
-  #              RM_dia = 60,
-  #              RM_isotope = "Au",
-  #              RM_density = 19.32,
-  #              element_fraction = 1,
-  #              dens_comps = dens_comps
-  #   )
-  # ),
-  # tar_target(
-  #   poster2,
-  #   sp_wrapper("~/OneDrive - Havforskningsinstituttet/Are Marine Nanoparticles/Paper_2_Au_val/poster_data/200823_BM_TiCuCr_x6000_poster_2.b/",
-  #              acq_time = 180,
-  #              sample_intake_rate = 0.346,
-  #              RM_string = "Au RM",
-  #              RM_dia = 60,
-  #              RM_isotope = "Au",
-  #              RM_density = 19.32,
-  #              element_fraction = 1,
-  #              dens_comps = dens_comps
-  #   )
-  # ),
+  tar_target(
+    poster1,
+    sp_wrapper("~/OneDrive - Havforskningsinstituttet/Are Marine Nanoparticles/Paper_2_Au_val/poster_data/200814_BM_TiCuCr_x6000_poster_1.b/",
+               acq_time = 180,
+               sample_intake_rate = 0.346,
+               RM_string = "Au RM",
+               RM_dia = 63,
+               RM_isotope = "Au",
+               RM_density = 19.32,
+               element_fraction = 1,
+               dens_comps = dens_comps
+    )
+  ),
+  tar_target(
+    poster2,
+    sp_wrapper("~/OneDrive - Havforskningsinstituttet/Are Marine Nanoparticles/Paper_2_Au_val/poster_data/200823_BM_TiCuCr_x6000_poster_2.b/",
+               acq_time = 180,
+               sample_intake_rate = 0.346,
+               RM_string = "Au RM 150ng/L",
+               RM_dia = 63,
+               RM_isotope = "Au",
+               RM_density = 19.32,
+               element_fraction = 1,
+               dens_comps = dens_comps
+    )
+  ),
   tar_target(
     au_sizes,
     sp_wrapper(
