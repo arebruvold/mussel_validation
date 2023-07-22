@@ -696,7 +696,6 @@ dl_sizemass <- au_alldays_cleaned %>%
      mass_conc_dl_gaussian =  (mean(mass_conc) + 3 * sd(mass_conc))/2
    )
  
- 
 ```
 
 ## Uncertainty
@@ -1166,6 +1165,16 @@ Per sample, per isotope.
 
 ```{r}
 
+poster_dls <- bind_rows(
+  poster_processed %>%
+    group_by(isotope) %>%
+    summarise(
+      particle_conc = mean(particle_conc_LOD),
+      mass_conc = mean(mass_conc_LOD)
+    ) %>% pivot_longer(cols = c(particle_conc, mass_conc), names_to = "parameter", values_to = "detection_limit"),
+  poster_dl_sizemass %>% select(isotope, size_detection_limit) %>% rename(c(detection_limit = size_detection_limit)) %>% mutate(parameter = "mean_size")
+)
+
 # fit lm for each spike level, parameter (pnc/mass/size) ~ day.
 # comment: Warning in code is due to sample without replicates.
 
@@ -1217,62 +1226,91 @@ poster_precision <-
           #
         )^2
     ) / grand_mean
-  ) 
-
-# %>%
-#   group_by(isotope, parameter, sample) %>%
-#   summarise(
-#     rsd = sd(value) / mean(value),
-#     mean_conc = mean(value)
-#   )
+  ) %>%
+  left_join(poster_dls, by = join_by(isotope, parameter))
 
 
-poster_table <- left_join(poster_precision,
+# size table
+poster_precision %>% filter(parameter == "mean_size") %>% select(isotope, sample_group, isotope, grand_mean, RSE_repeatability,RSE_intermediate_precision, rsd, detection_limit) %>% 
+  mutate(RSE_intermediate_precision = if_else(RSE_intermediate_precision %>% is.na(), rsd, RSE_intermediate_precision )) %>% 
+  mutate(detection_limit = detection_limit/(10^(-9))) %>% 
+  select(-rsd) %>% 
+  select(isotope, sample_group, grand_mean, detection_limit, RSE_repeatability, RSE_intermediate_precision) %>% 
+  gt(groupname_col = "isotope",
+     rowname_col = "sample_group"
+    ) %>% 
+  cols_label(
+    grand_mean = html("Mean [nm]"),
+    RSE_repeatability = html("RSD<sub>Repeatability</sub>"),
+    RSE_intermediate_precision = html("RSD<sub>Intermediate precision</sub>"),
+    detection_limit = html("Detection limit [nm]")
+  ) %>% tab_header("Diameter") %>% 
+   tab_footnote(
+    footnote = md("RSD is presented as variance was lower between days than within days."),
+    locations = cells_body(
+      columns = vars(RSE_intermediate_precision),
+      rows = RSE_intermediate_precision <= RSE_repeatability),
+    placement = "left") %>% 
+  opt_footnote_marks(marks = "standard") %>% 
+  fmt_number(decimals = 0) %>% 
+  fmt_percent(columns = matches("rsd|RSE"), decimals = 0) %>% 
+  gtsave(filename = "poster_preclod_size.docx")
 
-poster_dls <- bind_rows(
-  poster_processed %>%
-    group_by(isotope) %>%
-    summarise(
-      particle_conc = mean(particle_conc_LOD),
-      mass_conc = mean(mass_conc_LOD)
-    ) %>% pivot_longer(cols = c(particle_conc, mass_conc), names_to = "parameter", values_to = "detection_limit"),
-  poster_dl_sizemass %>% select(isotope, size_detection_limit) %>% rename(c(detection_limit = size_detection_limit)) %>% mutate(parameter = "mean_size")
-)
-) %>% select(parameter, isotope, rsd_min, rsd_max, detection_limit) %>% 
-  mutate(parameter = case_when(
-    parameter == "mass_conc" ~ "Particle mass concentration",
-    parameter == "particle_conc" ~ "Particle number concentration",
-    parameter == "mean_size" ~ "Mean size"
-  ))
+# mass conc table
+poster_precision %>% filter(parameter == "mass_conc") %>% select(isotope, sample_group, isotope, grand_mean, RSE_repeatability,RSE_intermediate_precision, rsd, detection_limit ) %>% 
+  mutate(RSE_intermediate_precision = if_else(RSE_intermediate_precision %>% is.na(), rsd, RSE_intermediate_precision )) %>% 
+  select(-rsd) %>% 
+  select(isotope, sample_group, grand_mean, detection_limit, RSE_repeatability, RSE_intermediate_precision) %>% 
+  gt(groupname_col = "isotope",
+     rowname_col = "sample_group"
+    ) %>% 
+  cols_label(
+    grand_mean = html("Mean [ng/g]"),
+    RSE_repeatability = html("RSD<sub>Repeatability</sub>"),
+    RSE_intermediate_precision = html("RSD<sub>Intermediate precision</sub>"),
+    detection_limit = html("Detection limit [ng/g]")
+  ) %>% tab_header("Mass concentration") %>% 
+   tab_footnote(
+    footnote = md("RSD is presented as variance was lower between days than within days."),
+    locations = cells_body(
+      columns = vars(RSE_intermediate_precision),
+      rows = RSE_intermediate_precision <= RSE_repeatability),
+    placement = "left") %>% 
+  opt_footnote_marks(marks = "standard") %>% 
+  fmt_number(decimals = 0) %>% 
+  fmt_percent(columns = matches("rsd|RSE"), decimals = 0) %>% 
 
-poster_processed %>% 
+  gtsave(filename = "poster_preclod_mass.docx")
 
-
-  precision_gtable <- precision_anovas %>%
-  # filter(str_detect(sample_group, "^\\w$")) %>%
-  select(parameter, RSE_repeatability, RSE_intermediate_precision) %>%
-  mutate(parameter = case_when(
-    parameter == "mass_conc" ~ "Particle mass concentration",
-    parameter == "particle_conc" ~ "Particle number concentration",
-    parameter == "mean_size" ~ "Mean size"
-  )) %>%
-  # mutate(sample = paste("Blue mussel +", sample)) %>%
-  gt(
-    rowname_col = "sample",
-    groupname_col = "parameter"
-  ) #%>%
-  # fmt_percent(columns = -c(1, 2)) %>%
-  # cols_label(
-  #   RSE_repeatability = html("RSD<sub>Repeatability</sub>"),
-  #   RSE_intermediate_precision = html("RSD<sub>Intermediate precision</sub>")
-  # )
-
-precision_gtable
-
+# part conc table
+poster_precision %>% filter(parameter == "particle_conc") %>% select(isotope, sample_group, isotope, grand_mean, RSE_repeatability,RSE_intermediate_precision, rsd, detection_limit ) %>% 
+  mutate(RSE_intermediate_precision = if_else(RSE_intermediate_precision %>% is.na(), rsd, RSE_intermediate_precision )) %>% 
+  select(-rsd) %>% 
+  select(isotope, sample_group, grand_mean, detection_limit, RSE_repeatability, RSE_intermediate_precision) %>% 
+  gt(groupname_col = "isotope",
+     rowname_col = "sample_group"
+    ) %>% 
+  cols_label(
+    grand_mean = html("Mean [#/g]"),
+    RSE_repeatability = html("RSD<sub>Repeatability</sub>"),
+    RSE_intermediate_precision = html("RSD<sub>Intermediate precision</sub>"),
+    detection_limit = html("Detection limit [#/g]")
+  ) %>% tab_header("Particle concentration") %>% 
+   tab_footnote(
+    footnote = md("RSD is presented as variance was lower between days than within days."),
+    locations = cells_body(
+      columns = vars(RSE_intermediate_precision),
+      rows = RSE_intermediate_precision <= RSE_repeatability),
+    placement = "left") %>% 
+  opt_footnote_marks(marks = "standard") %>% 
+  fmt_number(decimals = 0) %>% 
+  fmt_percent(columns = matches("rsd|RSE"), decimals = 0) %>% 
+  fmt_scientific(
+              columns = c(3,4),
+              decimals = 1) %>% 
+  gtsave(filename = "poster_preclod_pnc.docx")
 
 ```
-
-
 
 
 ```{r}
@@ -1289,12 +1327,3 @@ fmt_scientific(
 
 
 
-BIND LOD, REPORT 
-
-
-## References
-
--   "The same observation has been made by other authors as well, indicating that more research on determination of small particles near LODsize is
-    urgently needed." - Kinnunen.
-
-## Questions

@@ -151,14 +151,5 @@ list(
       element_fraction = 1,
       dens_comps = dens_comps
     )
-  ),
-  tar_target(
-    pt_sizes,
-    sp_wrapper(csv_folder = "~/sp-data/20210604_Pt_30_50_70nm.b/", acq_time = 120, sample_intake_rate = 0.346, RM_string = "60 nm Au NP 100 ng/L", RM_dia = 63, RM_isotope = "Au", RM_density = 19.32, element_fraction = 1, dens_comps = dens_comps)
-  ),
-  tar_target(si_sizes,
-             sp_wrapper("~/sp-data/20210623_80_120_300_1000nm.b/", acq_time = 120,sample_intake_rate = 0.346,RM_string = "Au 60 nm 100 ng/L",RM_dia = 63, RM_isotope = "Au", RM_density = 19.32, element_fraction = 1, dens_comps = dens_comps)),
-  
-  tar_target(au_sizes2, sp_wrapper(csv_folder = "~/sp-data/22_1028_Au_NP_calibration_series_10_20_30_40_50_60_80_100nm.b/", acq_time = 60, sample_intake_rate = 0.311, RM_string = "Au RM 63 nm 200ng/L", RM_dia = 63, RM_isotope = "Au", RM_density = 19.32, element_fraction = 1, dens_comps = dens_comps))
-  
+  )
 )
