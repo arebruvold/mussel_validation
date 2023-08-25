@@ -9,14 +9,16 @@ library(targets)
 
 # Set target options:
 tar_option_set(
-  packages = c("tidyverse",
-               "furrr",
-               "zoo",
-               "see",
-               "knitr",
-               "kableExtra",
-               "targets",
-               "patchwork"), # packages that your targets need to run
+  packages = c(
+    "tidyverse",
+    "furrr",
+    "zoo",
+    "see",
+    "knitr",
+    "kableExtra",
+    "targets",
+    "patchwork"
+  ), # packages that your targets need to run
   format = "rds" # default storage format
   # Set other options as needed.
 )
@@ -31,6 +33,15 @@ options(clustermq.scheduler = "multicore")
 lapply(list.files("R", full.names = TRUE, recursive = TRUE), source)
 # source("other_functions.R") # Source other scripts as needed. # nolint
 source("~/Documents/GitHub/sp_development/r/sp_funs_equal_h_thr.R")
+theme_set(
+  theme_linedraw(base_size = 14) +
+    theme(
+      panel.grid.major = element_line(size = 0.05),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      strip.text.x = element_text(face = "bold")
+    ) +
+    theme(panel.grid.minor = element_line(size = 0.05))
+)
 
 # Replace the target list below with your own:
 list(
@@ -115,37 +126,40 @@ list(
   tar_target(
     poster1,
     sp_wrapper("~/OneDrive - Havforskningsinstituttet/Are Marine Nanoparticles/Paper_2_Au_val/poster_data/200814_BM_TiCuCr_x6000_poster_1.b/",
-               acq_time = 180,
-               sample_intake_rate = 0.346,
-               RM_string = "Au RM",
-               RM_dia = 63,
-               RM_isotope = "Au",
-               RM_density = 19.32,
-               element_fraction = 1,
-               dens_comps = dens_comps
+      acq_time = 180,
+      sample_intake_rate = 0.346,
+      RM_string = "Au RM",
+      RM_dia = 63,
+      RM_isotope = "Au",
+      RM_density = 19.32,
+      element_fraction = 1,
+      dens_comps = dens_comps
     )
   ),
   tar_target(
     poster2,
     sp_wrapper("~/OneDrive - Havforskningsinstituttet/Are Marine Nanoparticles/Paper_2_Au_val/poster_data/200823_BM_TiCuCr_x6000_poster_2.b/",
-               acq_time = 180,
-               sample_intake_rate = 0.346,
-               RM_string = "Au RM 150ng/L",
-               RM_dia = 63,
-               RM_isotope = "Au",
-               RM_density = 19.32,
-               element_fraction = 1,
-               dens_comps = dens_comps
+      acq_time = 180,
+      sample_intake_rate = 0.346,
+      RM_string = "Au RM 150ng/L",
+      RM_dia = 63,
+      RM_isotope = "Au",
+      RM_density = 19.32,
+      element_fraction = 1,
+      dens_comps = dens_comps
     )
   ),
   tar_target(
     au_sizes,
-    sp_wrapper(
-      csv_folder = "~/sp-data/190920_nye gullpartikler.b",
-      acq_time = 120,
-      sample_intake_rate = 0.346,
-      RM_string = "^60 nm 100 ng/L",
-      RM_dia = 63,
+    sp_wrapper(csv_folder = "~/sp-data/22_1028_Au_NP_calibration_series_10_20_30_40_50_60_80_100nm.b/", acq_time = 60, sample_intake_rate = 0.311, RM_string = "Au RM 63 nm 200ng/L", RM_dia = 63, RM_isotope = "Au", RM_density = 19.32, element_fraction = 1, dens_comps = dens_comps)
+  ),
+  tar_target(
+    contamination_prpoly_noinc,
+    "~/sp-data/201017_MultiMe_prelim_prbnopmex_2308poster_reanalysis.b/" %>% sp_wrapper(
+      acq_time = 30,
+      sample_intake_rate = 0.345,
+      RM_string = "60 nm Au 100 ng/l RM",
+      RM_dia = 60,
       RM_isotope = "Au",
       RM_density = 19.32,
       element_fraction = 1,

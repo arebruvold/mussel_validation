@@ -34,7 +34,108 @@ library(scales)
 # library(flextable)
 library(gt)
 source("~/Documents/GitHub/sp_development/r/sp_funs_equal_h_thr.R")
+theme_set(
+  theme_linedraw(base_size = 14) +
+  theme(
+    panel.grid.major = element_line(size = 0.05),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text.x = element_text(face = "bold")
+  ) +
+  theme(panel.grid.minor = element_line(size = 0.05))
+)
 ```
+
+## Resubmission JAGF
+
+### Reviewer 1
+
+Refer to Katrin email to see questions, Reviewer 1.
+
+0.  Higlight novel points vs existing studies: Precision, enzyme, algorithm: ARE
+1.  Rewrite highlights - same as abstract. (check if we really need highlights in this JAGF? ARE
+2.  Aggregation problem, not addressed: ARE
+    -   Discuss how stability may be changed
+    -   Appear not to agglomerate: Show that sample prep does not induce aggl.
+    -   Cannot exclude the possibility that natural particles behave diff and aggr, or are already agglomerated.
+3.  Why protamex: Andre + are send file
+    -   Prize: Calculate cost per sample
+    -   Make sure Robustness, Simplcity, Non-hazardous is highlighted and:
+    -   Argue for novelty (in introd, vs other papers use either ..)
+4.  Specificity ti vs tio2: 
+    -   Mention, Ti-based particles. Mass equivalent diameter for Ti.
+    -   Check that density data is present in MS and that assumption is clear.
+5.  Ceramic tools Cr
+    -   Kitchen machine, mention.
+    -   See if data on cont of Cr is present in poster data.
+    -   Just show the data, qualitative. Or quantitative. "To exclude the possibility of Cr contamination ..." ADD DATA.
+    -   Maybe Andre has some data in microscope?
+6.  Methods:
+    -   How introduced: amount, time
+    -   Clarify in methods that the method applicability demonstration is for Ti, Cu, Cr.
+7.  Reagent blank
+    -   Change name in MS and tables
+    -   Check defeinition of method blank. Dont change name for now.
+8.  Selectivity not adressed esp for Cr.
+    -   Mention interferences for Cr, comment if OK. Polyatomic only background, not relevant for particles
+    -   Check if we have background. If not background, highly unlikely we have "polyatomic" particles
+9.  particle diameter, particle mass concentration and particle number concentration of unspiked mussel were not "non-detected". Can such mussel
+    really contain so many gold NPs? Please clarify.
+    -   Remove low samples, exchange w \<LOD in table 1 and text if relevant.
+10. Ignore. Or reinforce that dilution is nice for SP-ICP-MS except if you have contamination issues.
+11. Dl Au 1.7 ng/g. Recovery range 40 - 120 at this level?
+    -   Check that we compared recoveries with other studies.
+    -   Include any regulatory limits?
+    -   Add statment that no criteria for NPs, as such we use codex for relevant levels.
+12. How about validation for Cr, Cu, Ti?
+    -   Ignore?
+13. Surveillance sample better homogeneity?
+    -   Explain that this is due to diff texture of mussels
+    -   More heterogenous sample?
+14. Add the digit so that not 0.
+15. New paper: An Approach Based on an Increased Bandpass for Enabling the Use of Internal Standards in Single Particle ICP-MS: Application to AuNPs
+    Characterization."Please cite"
+
+-   Add IS to avoid high dilution factor?
+-   Not relevant?
+
+### Reviewer 2
+
+1.  Change wording to "avoid" or similar.
+2.  Please describe the significance of the selection of blue mussels and the innovation point of this work, we just change matrix
+    -   Composition very important
+    -   Blue mussels important because..
+    -   Strengthen highlights as mentioned w rev 1, n0.
+    -   
+3.  Look for data on spiking Au to mussels diluted 500x or check that no increase in ionic background and add sentence about this. And check if higher
+    dilution mussels have been spiked with gold.
+      - Are and Andre
+4.  It is well-established that using "expert judgement" is common practice. Reference GUM (Stig).
+    - Stig reference GUM?
+
+### Reviewer 3
+
+1.  Reference code in github and specify further for "threshold was calculated based on the assumption that the background noise followed a Poisson
+    distribution, with a constraint of a 95% probability of observing no more than one false positive per minute". How was this determined?
+    Poisson-normal or exact?
+    - Are
+
+2.  Explain high number of particles in blanks for Au. Carryover.
+    - Andre
+
+3.  Artifact: explain that not due to split events or processing of dissolved background. It happens when NO background, if background not relevant
+    anymore.
+      - Are
+
+4.  Add references on matrix matching as a way to overcome, including own paper (:D)
+    - Refer to own paper, Are.
+
+5.  Matrix effect on Ti, Cu, Cr at 5k dilution. Have any data? Mention that 1/10th of matrix.
+    - Are/ANDRE
+
+6.  "The authors need to prove that the Cu NPs are not really just TiO signals recorded from large Ti-containing particles".
+    -   Andre/ARE refer to oxide formation percentages max in Agilent 7900.
+    -   Are/Andre find data with spiked TiO2 and check that no Cu particles.
+    -   How large copper particle can a Ti-particle be detected as given interference.
 
 ## Introduction
 
@@ -257,7 +358,7 @@ precision_gtable %>% gtsave(filename = "precision_table.docx")
 
 ## Trueness
 
-  ### As recovery
+\### As recovery
 
 ```{r trueness-vs-measured, include = FALSE}
 trueness_meas_gt <- au_alldays_cleaned %>%
@@ -572,7 +673,6 @@ concentrations. Yet, this in both cases sub-ng/L and mostly driven by single out
 We have a significant difference between matrix blank instrument blank in terms of particle mass concentration and mean particle size, but not
 particle number concentration. This indicates that we do not have a change in transport efficiency, yet in the signal per particle.
 
-
 ```{r}
 # #pragmatic/preliminary for presentation
 # tar_read(au_alldays) %>% filter(str_detect(sample_name, "60 nm Au 100 ng/l RM|2B blåskjell 60 nm Au 100 ng/l")) %>% 
@@ -626,8 +726,9 @@ Assuming the particles are homogeneously dispersed, the number of particles meas
 parameter, $\lambda$, corresponds to the mean number of particles in this interval. It follows from number theory that the interarrival times of such
 events will follow an exponential distribution with rate parameter $\lambda$.
 
-We have that $\lambda = c_n \cdot \frac{Q_{det}}{t_{meas}}$, where $c_n$ is the particle number concentration of the measured solution in particles/L, $Q_{det}$ is
-the volumetric mass transport through the ICP in L per total acquisition time and $t_{meas}$ is the number of dwells per acquisition time. 
+We have that $\lambda = c_n \cdot \frac{Q_{det}}{t_{meas}}$, where $c_n$ is the particle number concentration of the measured solution in particles/L,
+$Q_{det}$ is the volumetric mass transport through the ICP in L per total acquisition time and $t_{meas}$ is the number of dwells per acquisition
+time.
 
 Using the cumulative exponential distribution we obtain
 
@@ -654,12 +755,13 @@ Taking dilution factor into account, we get for 60 nm `r 500*log(1/0.95)/(12.628
 
 ### Critical size
 
-A peak width of 500 $\mu$s is assumed based on approximation of peak widths near the LOD and literature (Laborda 2020). Assuming a triangular peak shape, it is possible to obtain an estimate for the corresponding particle mass, denoted as $m_p$:
+A peak width of 500 $\mu$s is assumed based on approximation of peak widths near the LOD and literature (Laborda 2020). Assuming a triangular peak
+shape, it is possible to obtain an estimate for the corresponding particle mass, denoted as $m_p$:
 
 $$m_{p} = \frac{ A_p}{ S } = \frac{w_p \cdot h_p}{2S},$$
 
-where $A_p$ is the particle signal, S is the sensitivity in counts per kg element. Using peak width 5 and height
-6, we get $$5*6*1.698164e-21/2$$ gives 2.547246e-20 for the peak mass at LOD.
+where $A_p$ is the particle signal, S is the sensitivity in counts per kg element. Using peak width 5 and height 6, we get $$5*6*1.698164e-21/2$$
+gives 2.547246e-20 for the peak mass at LOD.
 
 using $$d = (\frac{6m}{\pi p})^{1/3}$$ we get
 
@@ -700,7 +802,6 @@ dl_sizemass <- au_alldays_cleaned %>%
 
 ## Uncertainty
 
-
 To determine the signal per element mass, $S$, a particulate reference material with a known mass or size can be analyzed. By integrating
 background-subtracted peaks and using the median or the kernel density estimate of the resulting signal distribution, we obtain an estimate of the
 signal per particle mass or size in [counts/kg]:
@@ -714,12 +815,10 @@ $C_{std}$, for an estimate for the signal per dwell per mass element per volume 
 
 $$I = \frac{b}{C_{std}}.$$
 
-Combining these and multiplying by $t_{meas}$, the number of dwells during acquisition, the flow rate through the plasma, $Q_{det}$, in $\frac{L}{t_{acq}}$ may be determined and used to relate measured quantities to
-concentrations:
+Combining these and multiplying by $t_{meas}$, the number of dwells during acquisition, the flow rate through the plasma, $Q_{det}$, in
+$\frac{L}{t_{acq}}$ may be determined and used to relate measured quantities to concentrations:
 
 $$Q_{det} = \frac{t_{meas} \cdot I}{S}. $$
-
-
 
 Mean particle diameter is then given by
 
@@ -727,40 +826,41 @@ $$ \overline d_{p} =  \frac{1}{n}\sum_{i=1}^nd_{p_i} =
 \frac{1}{n}\sum_{i=1}^n\sqrt[3]{\frac{6  S \cdot A_{p_i}}{\pi \rho} } = 
 \frac{d_{rm}}{n\cdot \sqrt[3]{A_{rm}}}\sum_{i=1}^n\sqrt[3]{A_{p_i} },$$
 
-
 the particle mass concentration, $c_m$, by
 
 $$c_m = \frac{\sum_{i=1}^nA_{p_i} \cdot S_{}}{Q_{det}} = \frac{ C_{std} \sum_{i=1}^nA_{p_i}}{t_{meas} \cdot b}, $$
 
-
 and the particle number concentration, $c_n$, by
 
 $$c_{n} = \frac{n_{meas}}{Q_{det}}.$$
-
 
 Inserting for $Q_{det}$, we get
 
 $$ c_{n}  = \frac{n_{meas} \cdot 6 A_{rm} \cdot C_{std}}{t_{meas} \cdot \rho  \cdot \pi \cdot d_{rm}^3 \cdot b} $$
 
 -   $n_{meas}$ is the instrument measured number of particle events. This corresponds to a Poisson process and hence the standard uncertainty will be
-    its square root. Using the LOD for particle number concentration based on 35 measured particles justifies a normal approximation as a
-    conservative estimate for the uncertainty.
+    its square root. Using the LOD for particle number concentration based on 35 measured particles justifies a normal approximation as a conservative
+    estimate for the uncertainty.
 
--   $A_{rm}$ in counts is the location of the peak area per particle event of the reference material as determined using a kernel density estimate, uncertainty set to 5%.
+-   $A_{rm}$ in counts is the location of the peak area per particle event of the reference material as determined using a kernel density estimate,
+    uncertainty set to 5%.
 
 -   $A_p$ in counts is the peak area or total signal of a particle event of which 5 % uncertainty is assumed.
 
--   $C_{std}$ [kg/L] is the concentration of the standard. We use the uncertainty of the standard at 1%, and add another multiplicative term with 5% to account for the uncertainty of preparation.
+-   $C_{std}$ [kg/L] is the concentration of the standard. We use the uncertainty of the standard at 1%, and add another multiplicative term with 5%
+    to account for the uncertainty of preparation.
 
 -   $t_{meas}$ is the number of dwells per measurement, uncertainty set to 0.5%.
 
--   $\rho$ [kg/m^3] is the element density of a particle. Its uncertainty is not well-established, yet [@montoro_bustos_evaluation_2022] 0.05%. We set 1%.
+-   $\rho$ [kg/m\^3] is the element density of a particle. Its uncertainty is not well-established, yet [@montoro_bustos_evaluation_2022] 0.05%. We
+    set 1%.
 
 -   $d$ [m] is the particle diameter. For the reference material, the uncertainty in the certificate of analysis at 4 % is used.
 
 -   $b$ [counts/dwell] is the slope coefficient of the calibration curve. We use the uncertainty of the the linear regression on each day.
 
-For each variable the standard uncertainty is assumed for a Monte Carlo simulation with $10^6$ repeats, reporting the uncertainty with a coverage factor of two.
+For each variable the standard uncertainty is assumed for a Monte Carlo simulation with $10^6$ repeats, reporting the uncertainty with a coverage
+factor of two.
 
 ```{r standard-uncert-pnc}
 
@@ -967,9 +1067,6 @@ glht(amod_particle_conc, linfct = mcp(sample_group = "Tukey")) %>% summary()
 
 ## Poster
 
-Comment: Outlier detected strand sample G in poster 1 for Ti. This is due to one very large particle, above 1 um! In comparison to new study, data is similar in magnitude.
-
-sp_comparer uses mass thr to remove smaller, so can be used to compare different days.
 
 ```{r}
 # LODs, blank calcs:
@@ -1025,7 +1122,6 @@ subtracter_grouper <- function(processed_batch, acq_time) {
     ungroup()
 }
 ```
-
 
 ```{r poster-visualization}
 
@@ -1278,11 +1374,12 @@ poster_precision %>% filter(parameter == "mass_conc") %>% select(isotope, sample
     placement = "left") %>% 
   opt_footnote_marks(marks = "standard") %>% 
   fmt_number(decimals = 0) %>% 
+    fmt_number(columns = matches("detection"), decimals = 1) %>% 
   fmt_percent(columns = matches("rsd|RSE"), decimals = 0) %>% 
 
   gtsave(filename = "poster_preclod_mass.docx")
 
-# part conc table
+  # part conc table
 poster_precision %>% filter(parameter == "particle_conc") %>% select(isotope, sample_group, isotope, grand_mean, RSE_repeatability,RSE_intermediate_precision, rsd, detection_limit ) %>% 
   mutate(RSE_intermediate_precision = if_else(RSE_intermediate_precision %>% is.na(), rsd, RSE_intermediate_precision )) %>% 
   select(-rsd) %>% 
@@ -1312,18 +1409,88 @@ poster_precision %>% filter(parameter == "particle_conc") %>% select(isotope, sa
 
 ```
 
+```{r}
+# poster_table %>% gt() %>%
+#   fmt_number(
+#     columns = 3:4,
+#     decimals = 2
+#   ) %>%
+# fmt_scientific(
+#               columns = 5,
+#               decimals = 2) %>% 
+#   gtsave(filename = "poster_table.docx")
+```
+## Contamination from homogenization
 
 ```{r}
-poster_table %>% gt() %>%
-  fmt_number(
-    columns = 3:4,
-    decimals = 2
-  ) %>%
-fmt_scientific(
-              columns = 5,
-              decimals = 2) %>% 
-  gtsave(filename = "poster_table.docx")
+contamination_prpoly_noinc <- sp_classifier("~/sp-data/201017_MultiMe_prelim_prbnopmex_2308poster_reanalysis.b/") %>%
+  filter(isotope %in% c("Ti", "Cu", "Cr")) %>%
+  mutate(rawdata = future_map(filepath, ~ sp_reader(.) %>%
+    mutate(time = row_number() / 10000))) %>%
+  unnest(rawdata) %>% 
+  mutate(
+    
+        sample_name = case_when(
+          sample_name == "PrB no pmex" ~ "Homogenized UPW",
+          sample_name == "PrPoly no pmex" ~ "Homogenized PE",
+          TRUE ~ "WRONG SAMPLE"
+        )) %>% 
+  mutate(
+    sample_name = factor(sample_name, levels = c(
+      "Homogenized UPW",
+      "Homogenized PE"
+    )))
+
+cont_plot <- contamination_prpoly_noinc %>%
+  # filter(isotope == "Cu", sample_name == "PrB no pmex") %>%
+  ggplot(aes(x = time, y = counts)) +
+  geom_line() +
+  facet_grid(sample_name ~ isotope)+
+  # scale_y_continuous(breaks = breaks_pretty(n=6, min.n = 4), labels = fancy_scientific)+
+  xlab("Counts [#/100\u03BCs]") +
+  ylab("Time [s]")
+
+
+
+ggsave(cont_plot, filename = "cont_plot.tiff", width = 10, height = 5.25 )
+
 ```
 
+## Artifact
 
+```{r}
+tar_read(au_sizes) %>%
+  filter(
+    sample_name %>% str_detect("Au RM"),
+    !str_detect(sample_name, "ERROR|200")
+  ) %>%
+  unnest(peaks) %>%
+  mutate(
+    sample_name = factor(sample_name, levels = c(
+      "Au RM 10.9",
+      "Au RM 20.3",
+      "Au RM 30",
+      "Au RM 39",
+      "Au RM 51",
+      "Au RM 63",
+      "Au RM 83",
+      "Au RM 100"
+    ))
+  ) %>%
+  group_by(sample_name) %>%
+  mutate(particle_size_ref = str_extract(sample_name, "[\\d\\.]+$") %>% as.numeric()) %>%
+  ggplot(aes(particle_size)) +
+  geom_vline(aes(xintercept = particle_size_ref), color = "black", linetype = "longdash") +
+  geom_histogram(position = "identity", binwidth = 0.5, alpha = 0.6) +
+  facet_wrap(~sample_name, scale = "free", ncol = 2) +
+  xlim(c(0, 120)) +
+  theme_linedraw(base_size = 15) +
+  theme(panel.grid.major = element_line(size = 0.05)) +
+  theme(panel.grid.minor = element_line(size = 0.05)) +
+  scale_fill_manual(values = c("#436EEE", "#8B3626")) +
+  xlab("Particle diameter [nm]") +
+  ylab("Frequency [#]")
+ggsave(filename = "artifat_au_sizes.tiff", width = 15, height = 18)
+
+```
 
