@@ -32,7 +32,7 @@ options(clustermq.scheduler = "multicore")
 # Load the R scripts with your custom functions:
 lapply(list.files("R", full.names = TRUE, recursive = TRUE), source)
 # source("other_functions.R") # Source other scripts as needed. # nolint
-source("~/Documents/GitHub/sp_development/r/sp_funs_equal_h_thr.R")
+source("r/sp_funs_equal_h_thr.R")
 theme_set(
   theme_linedraw(base_size = 14) +
     theme(
