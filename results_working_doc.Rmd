@@ -445,6 +445,8 @@ plot_selectivity <- au_alldays_cleaned %>%
   theme_linedraw(base_size = 15)+
      theme(panel.grid.major = element_line(size = 0.05))+
   theme(panel.grid.minor = element_line(size = 0.05))+
+  #remove legend title
+  theme(legend.title = element_blank())+
   scale_fill_manual(values=c("#436EEE", "#8B3626"))+
   xlab("Particle diameter [nm]")+
   ylab("Frequency [#]")
@@ -464,7 +466,7 @@ plot_selectivity
 #   filter(spike == "60 nm",
 #          particle_size < 25) %>% ggplot(aes(peak_max/peak_width))+geom_histogram(binwidth =0.5)+theme_bw()
 
-ggsave(plot_selectivity, filename = "plot_selectivity.tiff", width = 15, height = 5 )
+ggsave(plot_selectivity, filename = "plot_selectivity.pdf", width = 15, height = 5 )
 ```
 
 ### Statistics
@@ -600,27 +602,27 @@ particle number concentration. This indicates that we do not have a change in tr
 
 ```{r}
 
-# Make calibration curves for each day-batch, appending day number.
-calibration <- list.files("~/sp-data/paper0_au_validering", full.names = TRUE) %>%
-  map_df(.f = ~ sp_classifier(.x, "60 nm Au 100 ng/l RM") %>%
-    sp_response() %>%
-    mutate(day = str_extract(.x, "\\d(?=.b$)"))) %>%
-  distinct(response, .keep_all = TRUE) %>%
-  select(day, intercept, response, r2)
-
-calibration %>%
-  rename_with(~ .x %>%
-    str_to_title()) %>%
-  gt() %>%
-  fmt_number(
-    columns = 2:3,
-    decimals = 2
-  ) %>%
-  fmt_number(
-    columns = 4,
-    decimals = 5
-  ) %>%
-  gtsave(filename = "calibration_curves.docx")
+# # Make calibration curves for each day-batch, appending day number.
+# calibration <- list.files("~/sp-data/paper0_au_validering", full.names = TRUE) %>%
+#   map_df(.f = ~ sp_classifier(.x, "60 nm Au 100 ng/l RM") %>%
+#     sp_response() %>%
+#     mutate(day = str_extract(.x, "\\d(?=.b$)"))) %>%
+#   distinct(response, .keep_all = TRUE) %>%
+#   select(day, intercept, response, r2)
+# 
+# calibration %>%
+#   rename_with(~ .x %>%
+#     str_to_title()) %>%
+#   gt() %>%
+#   fmt_number(
+#     columns = 2:3,
+#     decimals = 2
+#   ) %>%
+#   fmt_number(
+#     columns = 4,
+#     decimals = 5
+#   ) %>%
+#   gtsave(filename = "calibration_curves.docx")
 
 ```
 
@@ -732,17 +734,24 @@ $$ \overline d_{p} =  \frac{1}{n}\sum_{i=1}^nd_{p_i} =
 
 the particle mass concentration, $c_m$, by
 
-$$c_m = \frac{\sum_{i=1}^nA_{p_i} \cdot S_{}}{Q_{det}} = \frac{ C_{std} \sum_{i=1}^nA_{p_i}}{t_{meas} \cdot b}, $$
+$$c_m = \frac{\sum_{i=1}^nA_{p_i} / S_{}}{t_{meas}\cdot Q_{det}} = \frac{ C_{std} \sum_{i=1}^nA_{p_i}}{t_{meas} \cdot b}, $$
 
 and the particle number concentration, $c_n$, by
 
-$$c_{n} = \frac{n_{meas}}{Q_{det}}.$$
+$$c_{n} = \frac{n_{meas}}{t_{meas}\cdot Q_{det}}.$$
 
 Inserting for $Q_{det}$, we get
 
 $$ c_{n}  = \frac{n_{meas} \cdot 6 A_{rm} \cdot C_{std}}{t_{meas} \cdot \rho  \cdot \pi \cdot d_{rm}^3 \cdot b} $$
 
--   $n_{meas}$ is the instrument measured number of particle events. This corresponds to a Poisson process and hence the standard uncertainty will be
+and for mean particle diameter:
+
+$$
+\bar{d}=\frac{1}{n} \sum_{i=1}^n d_{i} = \frac{1}{n} \sum_{i=1}^n \sqrt[3]{\frac{6 A_{i}}{S \pi \rho}} = \frac{1}{n} \sum_{i=1}^n \sqrt[3]{\frac{A_{i}\cdot \rho_{rm} \cdot d_{rm}^3}{A_{rm} \cdot \rho}} \;  .
+$$
+\frac{6 A_{rm}}{\rho  \cdot \pi \cdot d_{rm}^3}
+
+-   $n_{meas}$ is the instrument measured number of particle events. This corresponds to a Poisson process and hence the standard uncertainty will be approximately
     its square root. Using the LOD for particle number concentration based on 35 measured particles justifies a normal approximation as a conservative
     estimate for the uncertainty.
 
@@ -756,15 +765,19 @@ $$ c_{n}  = \frac{n_{meas} \cdot 6 A_{rm} \cdot C_{std}}{t_{meas} \cdot \rho  \c
 
 -   $t_{meas}$ is the number of dwells per measurement, uncertainty set to 0.5%.
 
--   $\rho$ [kg/m\^3] is the element density of a particle. Its uncertainty is not well-established, yet [@montoro_bustos_evaluation_2022] 0.05%. We
+-   $\rho$ [kg/m^3^] is the element density of a particle. Its uncertainty is not well-established, yet [@montoro_bustos_evaluation_2022] 0.05%. We
     set 1%.
 
 -   $d$ [m] is the particle diameter. For the reference material, the uncertainty in the certificate of analysis at 4 % is used.
 
 -   $b$ [counts/dwell] is the slope coefficient of the calibration curve. We use the uncertainty of the the linear regression on each day.
 
-For each variable the standard uncertainty is assumed for a Monte Carlo simulation with $10^6$ repeats, reporting the uncertainty with a coverage
-factor of two.
+For each variable the standard uncertainty is assumed for a Monte Carlo simulation with $10^6$ repeats, reporting the uncertainty with a coverage factor of two. Note that for particles of other elements than gold, the additional uncertainty for calculating from using another ionic standard applies:
+
+$$S_i=S \frac{C_{std}\cdot b_i}{C_i \cdot b}$$
+
+where $S_i$ is the signal per particle mass for element $i$, $C_i$ is the concentration of the ionic standard for element $i$ and $b_i$ is the slope coefficient of the calibration curve for element $i$.
+
 
 ```{r standard-uncert-pnc}
 
@@ -1071,7 +1084,6 @@ poster_processed %>%
     str_detect(sample_group, "J|K|L") ~ "Surveillance"
   )) %>%
   ggplot(aes(sample_group, mass_conc)) +
-  stat_summary(geom = "errorbar", fun.data = mean_cl_normal) +
   geom_jitter(width = 0.2, aes(shape = as.factor(day))) +
   geom_hline(
     aes(yintercept = mean(mass_conc_LOD)),
@@ -1080,6 +1092,7 @@ poster_processed %>%
     color = "red",
     size = 2
   ) +
+    stat_summary(geom = "errorbar", fun.data = mean_cl_normal, color = "black", fill = "black") +
   facet_wrap(~isotope, scales = "free") +
   theme_linedraw(base_size = 14) +
   theme(
@@ -1092,7 +1105,7 @@ poster_processed %>%
   ylab("Particle mass concentration [ng/g]")+
   guides(shape=guide_legend(title="Day"))
 
-ggsave("poster_mass_conc.png", height = 4, width = 9)
+ggsave("poster_mass_conc.pdf", height = 4, width = 9)
 
 #particle conc
 poster_processed %>%
@@ -1128,7 +1141,7 @@ poster_processed %>%
   ylab("Particle number concentration [#/g]")+
   guides(shape=guide_legend(title="Day"))
 
-ggsave("poster_particle_conc.png", height = 4, width = 9)
+ggsave("poster_particle_conc.pdf", height = 4, width = 9)
 
 ```
 
@@ -1355,7 +1368,7 @@ cont_plot <- contamination_prpoly_noinc %>%
 
 
 
-ggsave(cont_plot, filename = "cont_plot.tiff", width = 10, height = 5.25 )
+ggsave(cont_plot, filename = "cont_plot.pdf", width = 10, height = 5.25 )
 
 ```
 
@@ -1396,7 +1409,7 @@ tar_read(au_sizes) %>%
   xlab("Particle diameter [nm]") +
   ylab("Frequency [#]")
 
-ggsave(filename = "artifat_au_sizes.tiff", width = 15, height = 18)
+ggsave(filename = "artifat_au_sizes.pdf", width = 15, height = 18)
 
 ```
 
