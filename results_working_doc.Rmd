@@ -1,8 +1,7 @@
 ---
-title: "Au validation"
 output:
-  bookdown::word_document2:
-    latex_engine: xelatex
+  bookdown::html_document2:
+  #   latex_engine: xelatex
     theme: journal
     code_folding: hide
     number_sections: false
@@ -45,6 +44,7 @@ theme_set(
 )
 ```
 
+# Validation
 
 ## Data cleaning
 
@@ -75,8 +75,8 @@ au_alldays_cleaned <- tar_read(au_alldays) %>%
       str_detect(sample_name, "60|Ringtest") ~ "60 nm",
       TRUE ~ ""
     )
-  ) %>%
-  select(day, sample_group, spike, replicate, mean_size, mass_conc, particle_conc, n_particles, transport_efficiency, mass_thr, mass_signal, peaks) %>%
+  ) %>% 
+  select(day, sample_group, spike, replicate, mean_size, mass_conc, particle_conc, n_particles, transport_efficiency, mass_thr, mass_signal, peaks) %>% 
   # add replicate # to water samples aka instrument blank samples using join.
   group_by(day, sample_group, spike) %>%
   mutate(
@@ -233,7 +233,6 @@ precision_anovas <-
     ) / grand_mean
   )
 
-
 precision_gtable <- precision_anovas %>%
   filter(str_detect(spike, "\\d")) %>%
   select(spike, parameter, RSD_repeatability, RSD_intermediate_precision) %>%
@@ -243,7 +242,7 @@ precision_gtable <- precision_anovas %>%
     parameter == "particle_conc" ~ "Particle number concentration",
     parameter == "mean_size" ~ "Mean size"
   )) %>%
-  mutate(sample = paste("Blue mussel +", sample)) %>%
+  mutate(sample = paste("Blue mussel +", sample)) %>% 
   gt(
     rowname_col = "sample",
     groupname_col = "parameter"
@@ -262,7 +261,7 @@ precision_gtable %>% gtsave(filename = "precision_table.docx")
 
 ## Trueness
 
-\### As recovery
+### As recovery
 
 ```{r trueness-vs-measured, include = FALSE}
 trueness_meas_gt <- au_alldays_cleaned %>%
@@ -982,7 +981,7 @@ glht(amod_particle_conc, linfct = mcp(sample_group = "Tukey")) %>% summary()
 
 ```
 
-## Poster
+## Application to Ti, Cu, Cr
 
 ```{r}
 # LODs, blank calcs:
@@ -1145,9 +1144,10 @@ ggsave("poster_particle_conc.pdf", height = 4, width = 9)
 
 ```
 
-### Poster detection limit
+### Detection limit
 
 ```{r}
+# set based on observed peak widths
 peak_width <- 6
 
 #size/mass detection limit
@@ -1171,7 +1171,7 @@ poster_dl_sizemass <- poster_processed %>%
 
 Peak width of approx 6 appears to be representative for all particle types.
 
-### Poster precision
+### Precision
 
 Per sample, per isotope.
 
@@ -1243,11 +1243,11 @@ poster_precision <-
 
 
 # size table
-poster_precision %>% filter(parameter == "mean_size") %>% select(isotope, sample_group, isotope, grand_mean, RSE_repeatability,RSE_intermediate_precision, rsd, detection_limit) %>% 
+poster_precision_table <- poster_precision %>% filter(parameter == "mean_size") %>% select(isotope, sample_group, isotope, grand_mean, RSE_repeatability,RSE_intermediate_precision, rsd, detection_limit) %>% 
   mutate(RSE_intermediate_precision = if_else(RSE_intermediate_precision %>% is.na(), rsd, RSE_intermediate_precision )) %>% 
   mutate(detection_limit = detection_limit/(10^(-9))) %>% 
   select(-rsd) %>% 
-  select(isotope, sample_group, grand_mean, detection_limit, RSE_repeatability, RSE_intermediate_precision) %>% 
+  select(isotope, sample_group, grand_mean, detection_limit, RSE_repeatability, RSE_intermediate_precision)  %>% 
   gt(groupname_col = "isotope",
      rowname_col = "sample_group"
     ) %>% 
@@ -1336,7 +1336,72 @@ poster_precision %>% filter(parameter == "particle_conc") %>% select(isotope, sa
 #               decimals = 2) %>% 
 #   gtsave(filename = "poster_table.docx")
 ```
-## Contamination from homogenization
+
+### Quality control
+
+```{r poster-QC}
+poster_recovery <- poster_processed %>% 
+  filter(
+    isotope == "Ti",
+    str_detect(
+      sample_name, "SPIKE TiO2, CuO|853"
+    )
+  ) %>%
+  mutate(
+    recovery_group = case_when(
+      str_detect(sample_name, "SPIKE") ~ "UPW-S",
+      str_detect(sample_name, "\\wS\\s") ~ "BM-S",
+      str_detect(sample_name, "[ABC]{1}\\s") ~ "BM",
+      TRUE ~ NA
+    )
+  ) %>% filter(!is.na(recovery_group)) %>% 
+
+  group_by(recovery_group, day) %>% 
+  summarise(across(c(mass_conc, particle_conc), mean)) %>% 
+  group_by(day) %>% 
+  mutate(
+    mass_conc = if_else(recovery_group == "BM-S", mass_conc - mass_conc[recovery_group == "BM"], mass_conc)
+  )
+
+
+d1_rec <- subset(poster_recovery, recovery_group == "BM-S" & day == 1)$mass_conc / subset(poster_recovery, recovery_group == "UPW-S" & day == 1)$mass_conc
+
+d2_rec <- subset(poster_recovery, recovery_group == "BM-S" & day == 1)$mass_conc / subset(poster_recovery, recovery_group == "UPW-S" & day == 2)$mass_conc
+
+poster_processed %>%
+  filter(sample_name %>% str_detect("PrBlank\\s\\d")) %>%
+  group_by(day, isotope) %>%
+  summarise(across(
+    c(mass_conc, particle_conc, mean_size),
+    list(
+      mean = ~ mean(., na.rm = T)
+    )
+  )) %>% 
+  mutate(
+    n_blanks = 5,
+    mass_conc_recovery = 
+      case_when(
+        day == 1 & isotope == "Ti" ~ d1_rec,
+        day == 2 & isotope == "Ti" ~ d2_rec,
+        TRUE ~ NA
+        
+      )
+  ) %>% 
+  select(day, isotope, mass_conc_mean, mass_conc_recovery, particle_conc_mean, n_blanks) %>% 
+  gt(groupname_col = "day") %>% 
+  fmt_percent(columns = mass_conc_recovery, decimals = 0) %>% 
+  fmt_number(
+    mass_conc_mean, decimals = 1
+  ) %>% 
+  fmt_number(
+    particle_conc_mean, decimals =  0
+  )
+
+
+```
+
+
+### Contamination from homogenization
 
 ```{r}
 contamination_prpoly_noinc <- sp_classifier("~/sp-data/201017_MultiMe_prelim_prbnopmex_2308poster_reanalysis.b/") %>%
@@ -1365,7 +1430,6 @@ cont_plot <- contamination_prpoly_noinc %>%
   # scale_y_continuous(breaks = breaks_pretty(n=6, min.n = 4), labels = fancy_scientific)+
   xlab("Counts [#/100\u03BCs]") +
   ylab("Time [s]")
-
 
 
 ggsave(cont_plot, filename = "cont_plot.pdf", width = 10, height = 5.25 )
